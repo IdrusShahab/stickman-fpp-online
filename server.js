@@ -131,6 +131,23 @@ io.on('connection', (socket) => {
     });
   });
 
+  socket.on('voiceNote', (data) => {
+    const player = players.get(socket.id);
+    if (!player || !data || !data.audio) return;
+
+    const audio = String(data.audio);
+    if (audio.length > 900000) return;
+
+    const mimeType = String(data.mimeType || 'audio/webm').slice(0, 32);
+
+    socket.broadcast.emit('voiceNote', {
+      id: socket.id,
+      nickname: player.nickname,
+      audio,
+      mimeType
+    });
+  });
+
   socket.on('disconnect', () => {
     players.delete(socket.id);
     io.emit('playerLeft', { id: socket.id });

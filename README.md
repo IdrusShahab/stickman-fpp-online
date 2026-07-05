@@ -70,6 +70,8 @@ Atau manual:
 | Chat | Buka chat |
 | FPP/TPP | Ganti kamera |
 | Pause | Jeda game |
+| Mic (tahan) | Voice note |
+| Insert (tahan, PC) | Voice note |
 
 ## Teknologi
 

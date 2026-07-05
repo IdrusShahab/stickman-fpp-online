@@ -13,6 +13,7 @@
       run: 'ShiftLeft',
       jump: 'Space',
       chat: 'Enter',
+      voiceNote: 'Insert',
       toggleCamera: 'KeyV',
       pause: 'KeyP'
     }
@@ -26,6 +27,7 @@
     run: 'Lari',
     jump: 'Lompat',
     chat: 'Chat',
+    voiceNote: 'Voice Note',
     toggleCamera: 'Ganti Kamera',
     pause: 'Pause'
   };
@@ -105,6 +107,8 @@
   const mobBtnChat = document.getElementById('mob-btn-chat');
   const mobBtnCamera = document.getElementById('mob-btn-camera');
   const mobBtnPause = document.getElementById('mob-btn-pause');
+  const mobBtnVoice = document.getElementById('mob-btn-voice');
+  const voiceRecordingIndicator = document.getElementById('voice-recording-indicator');
 
   let useMobileControls = false;
   let mobileStick = { x: 0, y: 0 };
@@ -117,6 +121,14 @@
 
   let lastMoveSent = 0;
   let pingInterval = null;
+
+  let voiceRecording = false;
+  let voiceMediaRecorder = null;
+  let voiceStream = null;
+  let voiceChunks = [];
+  let voiceRecordTimeout = null;
+  const VOICE_MAX_MS = 15000;
+  const VOICE_MAX_BYTES = 500000;
 
   function isMobileDevice() {
     const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -258,8 +270,133 @@
     bindMobileButton(mobBtnRun, () => { mobileRun = true; }, () => { mobileRun = false; });
     bindMobileButton(mobBtnJump, () => { mobileJumpQueued = true; });
     bindMobileButton(mobBtnChat, () => openChat());
+    bindMobileButton(mobBtnVoice, () => startVoiceNote(), () => stopVoiceNote());
     bindMobileButton(mobBtnCamera, () => toggleCameraMode());
     bindMobileButton(mobBtnPause, () => openPauseMenu());
+  }
+
+  function showVoiceRecordingUI(visible) {
+    if (!voiceRecordingIndicator) return;
+    voiceRecordingIndicator.classList.toggle('hidden', !visible);
+  }
+
+  function showVoiceToast(msg) {
+    if (!statusBar) return;
+    const prev = statusBar.textContent;
+    statusBar.textContent = msg;
+    statusBar.style.color = '#ce93d8';
+    setTimeout(() => {
+      statusBar.style.color = '';
+      updateStatusBar();
+    }, 2500);
+  }
+
+  function getVoiceMimeType() {
+    if (typeof MediaRecorder === 'undefined') return null;
+    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
+    if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm';
+    if (MediaRecorder.isTypeSupported('audio/mp4')) return 'audio/mp4';
+    return '';
+  }
+
+  async function startVoiceNote() {
+    if (voiceRecording || !isPlaying || isPaused) return;
+    if (document.activeElement === chatInput) return;
+
+    const mimeType = getVoiceMimeType();
+    if (!mimeType) {
+      showVoiceToast('Browser tidak mendukung rekaman suara');
+      return;
+    }
+
+    try {
+      voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      voiceMediaRecorder = new MediaRecorder(voiceStream, { mimeType });
+      voiceChunks = [];
+      voiceMediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) voiceChunks.push(e.data);
+      };
+      voiceMediaRecorder.onstop = handleVoiceRecorded;
+      voiceMediaRecorder.start(250);
+      voiceRecording = true;
+      showVoiceRecordingUI(true);
+      voiceRecordTimeout = setTimeout(stopVoiceNote, VOICE_MAX_MS);
+    } catch (_) {
+      showVoiceToast('Izinkan akses mikrofon di browser');
+    }
+  }
+
+  function stopVoiceNote() {
+    if (!voiceRecording) return;
+    clearTimeout(voiceRecordTimeout);
+    voiceRecordTimeout = null;
+    voiceRecording = false;
+    showVoiceRecordingUI(false);
+    if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+      voiceMediaRecorder.stop();
+    } else {
+      cleanupVoiceStream();
+    }
+  }
+
+  function cleanupVoiceStream() {
+    if (voiceStream) {
+      voiceStream.getTracks().forEach((t) => t.stop());
+      voiceStream = null;
+    }
+  }
+
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const result = reader.result;
+        if (typeof result === 'string') resolve(result.split(',')[1]);
+        else reject(new Error('read failed'));
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  async function handleVoiceRecorded() {
+    const mimeType = voiceMediaRecorder ? voiceMediaRecorder.mimeType : 'audio/webm';
+    cleanupVoiceStream();
+    voiceMediaRecorder = null;
+
+    if (!voiceChunks.length) return;
+
+    const blob = new Blob(voiceChunks, { type: mimeType });
+    voiceChunks = [];
+
+    if (blob.size < 1000) return;
+    if (blob.size > VOICE_MAX_BYTES) {
+      showVoiceToast('Voice note terlalu panjang (max ~15 detik)');
+      return;
+    }
+
+    try {
+      const base64 = await blobToBase64(blob);
+      socket.emit('voiceNote', { audio: base64, mimeType });
+      if (localPlayerMesh) showVoiceBubble(localPlayerMesh);
+    } catch (_) {
+      showVoiceToast('Gagal mengirim voice note');
+    }
+  }
+
+  function showVoiceBubble(mesh) {
+    if (!mesh || !mesh.userData.chatBubbleSprite) return;
+    showChatBubble(mesh, '🎤 Voice note');
+  }
+
+  function playVoiceNote(data) {
+    if (!data || !data.audio) return;
+
+    const mesh = data.id === myId ? localPlayerMesh : otherPlayers.get(data.id)?.mesh;
+    if (mesh) showVoiceBubble(mesh);
+
+    const audio = new Audio(`data:${data.mimeType || 'audio/webm'};base64,${data.audio}`);
+    audio.play().catch(() => {});
   }
 
   function updateMobileCameraBtn() {
@@ -290,7 +427,7 @@
 
   function codeToLabel(code) {
     const map = {
-      Space: 'Space', Enter: 'Enter', Escape: 'Esc',
+      Space: 'Space', Enter: 'Enter', Escape: 'Esc', Insert: 'Insert',
       ShiftLeft: 'Shift', ShiftRight: 'Shift R',
       ControlLeft: 'Ctrl', ControlRight: 'Ctrl R',
       ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→'
@@ -400,6 +537,7 @@
     clearMovementKeys();
     resetJoystick();
     mobileRun = false;
+    stopVoiceNote();
     setMobileControlsVisible(false);
     isPaused = true;
     if (document.pointerLockElement) {
@@ -427,6 +565,7 @@
     resetJoystick();
     mobileRun = false;
     mobileJumpQueued = false;
+    stopVoiceNote();
     setMobileControlsVisible(false);
     isPlaying = false;
     isPaused = false;
@@ -522,6 +661,7 @@
       `${codeToLabel(settings.keybinds.run)}: lari`,
       `${codeToLabel(settings.keybinds.jump)}: lompat`
     ];
+    parts.push(`${codeToLabel(settings.keybinds.voiceNote)}: voice`);
     parts.push(`${codeToLabel(settings.keybinds.toggleCamera)}: FPP/TPP`);
     parts.push(`${codeToLabel(settings.keybinds.pause)}: pause`);
     statusBar.textContent = parts.join(' | ');
@@ -1366,11 +1506,21 @@
       return;
     }
 
+    if (e.code === settings.keybinds.voiceNote && !e.repeat) {
+      e.preventDefault();
+      startVoiceNote();
+      return;
+    }
+
     keys[e.code] = true;
   }, true);
 
   document.addEventListener('keyup', (e) => {
     if (rebindingAction || isPaused) return;
+    if (e.code === settings.keybinds.voiceNote) {
+      stopVoiceNote();
+      return;
+    }
     keys[e.code] = false;
   });
 
@@ -1486,6 +1636,10 @@
   socket.on('chatMessage', (data) => {
     addChatMessage(data);
     showPlayerChatBubble(data.id, data.message);
+  });
+
+  socket.on('voiceNote', (data) => {
+    playVoiceNote(data);
   });
 
   initThree();
