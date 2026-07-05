@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stickman FPP Online</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="menu-screen">
+    <div class="menu-card">
+      <h1>Stickman FPP Online</h1>
+      <p>Game multiplayer sederhana — ruangan indoor, FPP & TPP.</p>
+      <label for="nickname-input">Nickname</label>
+      <input type="text" id="nickname-input" maxlength="16" placeholder="Masukkan nickname..." autocomplete="off">
+      <button id="play-btn">Main Sekarang</button>
+      <button id="main-settings-btn" class="btn-secondary">Pengaturan</button>
+      <div class="controls-info">
+        <h3>Kontrol Default</h3>
+        <ul>
+          <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> — Jalan / Mundur</li>
+          <li><kbd>Shift</kbd> — Lari</li>
+          <li><kbd>Space</kbd> — Lompat</li>
+          <li><kbd>V</kbd> — Ganti FPP / TPP</li>
+          <li><kbd>Klik Kanan</kbd> — Putar kamera (orbit)</li>
+          <li><kbd>P</kbd> — Pause</li>
+          <li><kbd>Enter</kbd> — Chat</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div id="game-ui" class="hidden">
+    <div id="crosshair">+</div>
+    <div id="camera-mode-badge">FPP</div>
+    <div id="hud-top">
+      <div id="player-info">
+        <span id="my-nickname">Player</span>
+        <span id="my-ping" class="ping">0 ms</span>
+      </div>
+      <div id="player-list"></div>
+    </div>
+    <div id="chat-container">
+      <div id="chat-messages"></div>
+      <input type="text" id="chat-input" maxlength="200" placeholder="Tekan Enter untuk chat..." autocomplete="off">
+    </div>
+    <div id="status-bar">Klik layar untuk mengunci kursor</div>
+  </div>
+
+  <div id="pause-menu" class="overlay hidden">
+    <div class="overlay-card">
+      <h2>PAUSE</h2>
+      <p class="overlay-sub">Game dijeda</p>
+      <button id="resume-btn" class="btn-primary">Lanjutkan</button>
+      <button id="pause-settings-btn" class="btn-secondary">Pengaturan</button>
+      <button id="quit-btn" class="btn-danger">Keluar ke Menu</button>
+    </div>
+  </div>
+
+  <div id="settings-panel" class="overlay hidden">
+    <div class="settings-card">
+      <h2>Pengaturan</h2>
+
+      <div class="settings-section">
+        <h3>Mode Kamera</h3>
+        <div class="camera-toggle-group">
+          <button class="camera-btn active" data-mode="fpp">FPP (Orang Pertama)</button>
+          <button class="camera-btn" data-mode="tpp">TPP (Orang Ketiga)</button>
+        </div>
+        <p class="hint">Tekan tombol ganti kamera saat main untuk beralih kapan saja.</p>
+      </div>
+
+      <div class="settings-section">
+        <h3>Kontrol (Keybind)</h3>
+        <p class="hint">Klik tombol lalu tekan key yang diinginkan.</p>
+        <div class="keybind-grid" id="keybind-list"></div>
+      </div>
+
+      <div class="settings-actions">
+        <button id="settings-back-btn" class="btn-secondary">Kembali</button>
+        <button id="settings-reset-btn" class="btn-danger">Reset Default</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
