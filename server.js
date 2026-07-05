@@ -6,7 +6,8 @@ const path = require('path');
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  transports: ['websocket', 'polling']
+  transports: ['websocket', 'polling'],
+  maxHttpBufferSize: 5e6
 });
 
 const PORT = process.env.PORT || 3000;
@@ -138,7 +139,7 @@ io.on('connection', (socket) => {
     const audio = String(data.audio);
     if (audio.length > 900000) return;
 
-    const mimeType = String(data.mimeType || 'audio/webm').slice(0, 32);
+    const mimeType = String(data.mimeType || 'audio/webm').split(';')[0].slice(0, 24);
 
     socket.broadcast.emit('voiceNote', {
       id: socket.id,

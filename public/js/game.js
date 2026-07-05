@@ -127,8 +127,11 @@
   let voiceStream = null;
   let voiceChunks = [];
   let voiceRecordTimeout = null;
+  let voiceRecordedMime = 'audio/webm';
+  let audioContext = null;
   const VOICE_MAX_MS = 15000;
   const VOICE_MAX_BYTES = 500000;
+  const VOICE_MIN_BYTES = 200;
 
   function isMobileDevice() {
     const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
@@ -291,12 +294,31 @@
     }, 2500);
   }
 
+  function normalizeMimeType(mimeType) {
+    return (mimeType || 'audio/webm').split(';')[0].trim();
+  }
+
   function getVoiceMimeType() {
     if (typeof MediaRecorder === 'undefined') return null;
-    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) return 'audio/webm;codecs=opus';
-    if (MediaRecorder.isTypeSupported('audio/webm')) return 'audio/webm';
-    if (MediaRecorder.isTypeSupported('audio/mp4')) return 'audio/mp4';
+    const isIOS = /iPad|iPhone|iPod/i.test(navigator.userAgent);
+    const types = isIOS
+      ? ['audio/mp4', 'audio/aac', 'audio/webm', 'audio/ogg;codecs=opus']
+      : ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+    for (const type of types) {
+      if (MediaRecorder.isTypeSupported(type)) return type;
+    }
     return '';
+  }
+
+  function getAudioContext() {
+    if (!audioContext) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioContext = new Ctx();
+    }
+    if (audioContext && audioContext.state === 'suspended') {
+      audioContext.resume();
+    }
+    return audioContext;
   }
 
   async function startVoiceNote() {
@@ -310,14 +332,22 @@
     }
 
     try {
-      voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      getAudioContext();
+      voiceStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          channelCount: 1
+        }
+      });
       voiceMediaRecorder = new MediaRecorder(voiceStream, { mimeType });
       voiceChunks = [];
+      voiceRecordedMime = normalizeMimeType(mimeType);
       voiceMediaRecorder.ondataavailable = (e) => {
         if (e.data && e.data.size > 0) voiceChunks.push(e.data);
       };
       voiceMediaRecorder.onstop = handleVoiceRecorded;
-      voiceMediaRecorder.start(250);
+      voiceMediaRecorder.start();
       voiceRecording = true;
       showVoiceRecordingUI(true);
       voiceRecordTimeout = setTimeout(stopVoiceNote, VOICE_MAX_MS);
@@ -332,7 +362,8 @@
     voiceRecordTimeout = null;
     voiceRecording = false;
     showVoiceRecordingUI(false);
-    if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+    if (voiceMediaRecorder && voiceMediaRecorder.state === 'recording') {
+      try { voiceMediaRecorder.requestData(); } catch (_) { /* ignore */ }
       voiceMediaRecorder.stop();
     } else {
       cleanupVoiceStream();
@@ -359,17 +390,33 @@
     });
   }
 
+  function base64ToBlob(base64, mimeType) {
+    const cleanMime = normalizeMimeType(mimeType);
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: cleanMime });
+  }
+
   async function handleVoiceRecorded() {
-    const mimeType = voiceMediaRecorder ? voiceMediaRecorder.mimeType : 'audio/webm';
-    cleanupVoiceStream();
+    if (voiceMediaRecorder) {
+      voiceRecordedMime = normalizeMimeType(voiceMediaRecorder.mimeType || voiceRecordedMime);
+    }
     voiceMediaRecorder = null;
+    cleanupVoiceStream();
 
-    if (!voiceChunks.length) return;
+    if (!voiceChunks.length) {
+      showVoiceToast('Rekaman terlalu pendek');
+      return;
+    }
 
-    const blob = new Blob(voiceChunks, { type: mimeType });
+    const blob = new Blob(voiceChunks, { type: voiceRecordedMime });
     voiceChunks = [];
 
-    if (blob.size < 1000) return;
+    if (blob.size < VOICE_MIN_BYTES) {
+      showVoiceToast('Rekaman terlalu pendek');
+      return;
+    }
     if (blob.size > VOICE_MAX_BYTES) {
       showVoiceToast('Voice note terlalu panjang (max ~15 detik)');
       return;
@@ -377,8 +424,9 @@
 
     try {
       const base64 = await blobToBase64(blob);
-      socket.emit('voiceNote', { audio: base64, mimeType });
-      if (localPlayerMesh) showVoiceBubble(localPlayerMesh);
+      const payload = { audio: base64, mimeType: voiceRecordedMime };
+      socket.emit('voiceNote', payload);
+      playVoiceNote({ id: myId, audio: base64, mimeType: voiceRecordedMime });
     } catch (_) {
       showVoiceToast('Gagal mengirim voice note');
     }
@@ -389,14 +437,43 @@
     showChatBubble(mesh, '🎤 Voice note');
   }
 
-  function playVoiceNote(data) {
+  async function playVoiceWithWebAudio(blob) {
+    const ctx = getAudioContext();
+    if (!ctx) throw new Error('no audio context');
+    const buffer = await blob.arrayBuffer();
+    const audioBuffer = await ctx.decodeAudioData(buffer.slice(0));
+    const source = ctx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(ctx.destination);
+    source.start(0);
+  }
+
+  async function playVoiceNote(data) {
     if (!data || !data.audio) return;
 
     const mesh = data.id === myId ? localPlayerMesh : otherPlayers.get(data.id)?.mesh;
     if (mesh) showVoiceBubble(mesh);
 
-    const audio = new Audio(`data:${data.mimeType || 'audio/webm'};base64,${data.audio}`);
-    audio.play().catch(() => {});
+    const blob = base64ToBlob(data.audio, data.mimeType);
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio();
+    audio.src = url;
+    audio.volume = 1;
+    audio.preload = 'auto';
+
+    try {
+      await audio.play();
+      audio.onended = () => URL.revokeObjectURL(url);
+      return;
+    } catch (_) {
+      URL.revokeObjectURL(url);
+    }
+
+    try {
+      await playVoiceWithWebAudio(blob);
+    } catch (_) {
+      showVoiceToast('Gagal memutar voice note');
+    }
   }
 
   function updateMobileCameraBtn() {
