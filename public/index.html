@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Stickman FPP Online</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
@@ -25,6 +25,7 @@
           <li><kbd>Klik Kanan</kbd> — Putar kamera (orbit)</li>
           <li><kbd>P</kbd> — Pause</li>
           <li><kbd>Enter</kbd> — Chat</li>
+          <li><strong>HP:</strong> Joystick + tombol Lari/Lompat/Chat</li>
         </ul>
       </div>
     </div>
@@ -45,6 +46,22 @@
       <input type="text" id="chat-input" maxlength="200" placeholder="Tekan Enter untuk chat..." autocomplete="off">
     </div>
     <div id="status-bar">Klik layar untuk mengunci kursor</div>
+
+    <div id="mobile-controls" class="hidden">
+      <div id="joystick-zone">
+        <div id="joystick-base">
+          <div id="joystick-knob"></div>
+        </div>
+      </div>
+      <div id="look-zone"></div>
+      <div id="mobile-buttons">
+        <button type="button" id="mob-btn-run" class="mob-btn mob-btn-run">Lari</button>
+        <button type="button" id="mob-btn-jump" class="mob-btn mob-btn-jump">Lompat</button>
+        <button type="button" id="mob-btn-chat" class="mob-btn mob-btn-chat">Chat</button>
+        <button type="button" id="mob-btn-camera" class="mob-btn mob-btn-camera">FPP</button>
+        <button type="button" id="mob-btn-pause" class="mob-btn mob-btn-pause">Pause</button>
+      </div>
+    </div>
   </div>
 
   <div id="pause-menu" class="overlay hidden">

@@ -96,9 +96,176 @@
   const statusBar = document.getElementById('status-bar');
   const crosshair = document.getElementById('crosshair');
   const cameraModeBadge = document.getElementById('camera-mode-badge');
+  const mobileControls = document.getElementById('mobile-controls');
+  const joystickZone = document.getElementById('joystick-zone');
+  const joystickKnob = document.getElementById('joystick-knob');
+  const lookZone = document.getElementById('look-zone');
+  const mobBtnRun = document.getElementById('mob-btn-run');
+  const mobBtnJump = document.getElementById('mob-btn-jump');
+  const mobBtnChat = document.getElementById('mob-btn-chat');
+  const mobBtnCamera = document.getElementById('mob-btn-camera');
+  const mobBtnPause = document.getElementById('mob-btn-pause');
+
+  let useMobileControls = false;
+  let mobileStick = { x: 0, y: 0 };
+  let mobileRun = false;
+  let mobileJumpQueued = false;
+  let joystickPointerId = null;
+  let lookPointerId = null;
+  let joystickCenter = { x: 0, y: 0 };
+  const JOYSTICK_MAX_RADIUS = 42;
 
   let lastMoveSent = 0;
   let pingInterval = null;
+
+  function isMobileDevice() {
+    const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    const narrow = window.innerWidth <= 1024;
+    const mobileUa = /Android|iPhone|iPad|iPod|Mobile|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    return touch && (narrow || mobileUa);
+  }
+
+  function canControlMovement() {
+    return !isOrbitMode && (pointerLocked || useMobileControls);
+  }
+
+  function setMobileControlsVisible(visible) {
+    if (!mobileControls) return;
+    mobileControls.classList.toggle('hidden', !visible);
+    mobileControls.classList.toggle('active', visible);
+    document.body.classList.toggle('mobile-mode', visible);
+  }
+
+  function resetJoystick() {
+    mobileStick.x = 0;
+    mobileStick.y = 0;
+    joystickPointerId = null;
+    if (joystickZone) joystickZone.classList.remove('active');
+    if (joystickKnob) joystickKnob.style.transform = 'translate(0px, 0px)';
+  }
+
+  function updateJoystick(clientX, clientY) {
+    let dx = clientX - joystickCenter.x;
+    let dy = clientY - joystickCenter.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > JOYSTICK_MAX_RADIUS) {
+      dx = (dx / dist) * JOYSTICK_MAX_RADIUS;
+      dy = (dy / dist) * JOYSTICK_MAX_RADIUS;
+    }
+    if (joystickKnob) joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    mobileStick.x = dx / JOYSTICK_MAX_RADIUS;
+    mobileStick.y = dy / JOYSTICK_MAX_RADIUS;
+  }
+
+  function applyLookDelta(dx, dy) {
+    yaw -= dx * 0.004;
+    pitch -= dy * 0.004;
+    pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, pitch));
+    updateCamera();
+  }
+
+  function bindMobileButton(btn, onDown, onUp) {
+    if (!btn) return;
+    const down = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.classList.add('pressed');
+      onDown();
+    };
+    const up = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      btn.classList.remove('pressed');
+      if (onUp) onUp();
+    };
+    btn.addEventListener('touchstart', down, { passive: false });
+    btn.addEventListener('touchend', up, { passive: false });
+    btn.addEventListener('touchcancel', up, { passive: false });
+    btn.addEventListener('mousedown', down);
+    btn.addEventListener('mouseup', up);
+    btn.addEventListener('mouseleave', up);
+  }
+
+  function initMobileControls() {
+    useMobileControls = isMobileDevice();
+    if (!useMobileControls || !joystickZone) return;
+
+    joystickZone.addEventListener('touchstart', (e) => {
+      if (!isPlaying || isPaused) return;
+      e.preventDefault();
+      const touch = e.changedTouches[0];
+      joystickPointerId = touch.identifier;
+      const rect = joystickZone.getBoundingClientRect();
+      joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      joystickZone.classList.add('active');
+      updateJoystick(touch.clientX, touch.clientY);
+    }, { passive: false });
+
+    joystickZone.addEventListener('touchmove', (e) => {
+      if (joystickPointerId === null) return;
+      e.preventDefault();
+      for (const touch of e.changedTouches) {
+        if (touch.identifier === joystickPointerId) {
+          updateJoystick(touch.clientX, touch.clientY);
+          break;
+        }
+      }
+    }, { passive: false });
+
+    const endJoystick = (e) => {
+      for (const touch of e.changedTouches) {
+        if (touch.identifier === joystickPointerId) {
+          resetJoystick();
+          break;
+        }
+      }
+    };
+    joystickZone.addEventListener('touchend', endJoystick, { passive: false });
+    joystickZone.addEventListener('touchcancel', endJoystick, { passive: false });
+
+    lookZone.addEventListener('touchstart', (e) => {
+      if (!isPlaying || isPaused || document.activeElement === chatInput) return;
+      if (e.target.closest('#mobile-buttons, #joystick-zone, #chat-container')) return;
+      const touch = e.changedTouches[0];
+      lookPointerId = touch.identifier;
+      lookZone.lastX = touch.clientX;
+      lookZone.lastY = touch.clientY;
+    }, { passive: false });
+
+    lookZone.addEventListener('touchmove', (e) => {
+      if (lookPointerId === null) return;
+      e.preventDefault();
+      for (const touch of e.changedTouches) {
+        if (touch.identifier === lookPointerId) {
+          const dx = touch.clientX - lookZone.lastX;
+          const dy = touch.clientY - lookZone.lastY;
+          lookZone.lastX = touch.clientX;
+          lookZone.lastY = touch.clientY;
+          applyLookDelta(dx, dy);
+          break;
+        }
+      }
+    }, { passive: false });
+
+    const endLook = (e) => {
+      for (const touch of e.changedTouches) {
+        if (touch.identifier === lookPointerId) lookPointerId = null;
+      }
+    };
+    lookZone.addEventListener('touchend', endLook, { passive: false });
+    lookZone.addEventListener('touchcancel', endLook, { passive: false });
+
+    bindMobileButton(mobBtnRun, () => { mobileRun = true; }, () => { mobileRun = false; });
+    bindMobileButton(mobBtnJump, () => { mobileJumpQueued = true; });
+    bindMobileButton(mobBtnChat, () => openChat());
+    bindMobileButton(mobBtnCamera, () => toggleCameraMode());
+    bindMobileButton(mobBtnPause, () => openPauseMenu());
+  }
+
+  function updateMobileCameraBtn() {
+    if (!mobBtnCamera) return;
+    mobBtnCamera.textContent = settings.cameraMode === 'tpp' ? 'TPP' : 'FPP';
+  }
 
   function loadSettings() {
     try {
@@ -135,6 +302,10 @@
   }
 
   function isActionPressed(action) {
+    if (useMobileControls) {
+      if (action === 'run') return mobileRun;
+      if (action === 'jump') return mobileJumpQueued;
+    }
     const code = settings.keybinds[action];
     if (!code) return false;
     if (keys[code]) return true;
@@ -142,6 +313,10 @@
       return settings.keybinds.run === 'ShiftLeft' || settings.keybinds.run === 'ShiftRight';
     }
     return false;
+  }
+
+  function hasJoystickInput() {
+    return Math.abs(mobileStick.x) > 0.12 || Math.abs(mobileStick.y) > 0.12;
   }
 
   function buildSettingsUI() {
@@ -223,6 +398,9 @@
     if (!isPlaying || isPaused) return;
     exitOrbitMode();
     clearMovementKeys();
+    resetJoystick();
+    mobileRun = false;
+    setMobileControlsVisible(false);
     isPaused = true;
     if (document.pointerLockElement) {
       document.exitPointerLock();
@@ -236,15 +414,20 @@
     isPaused = false;
     pauseMenu.classList.add('hidden');
     settingsPanel.classList.add('hidden');
-    gameUI.style.pointerEvents = 'none';
-    if (!document.activeElement || document.activeElement === document.body) {
+    gameUI.style.pointerEvents = useMobileControls ? 'auto' : 'none';
+    if (!useMobileControls && (!document.activeElement || document.activeElement === document.body)) {
       renderer.domElement.requestPointerLock();
     }
+    if (useMobileControls) setMobileControlsVisible(true);
     updateStatusBar();
   }
 
   function quitToMenu() {
     exitOrbitMode();
+    resetJoystick();
+    mobileRun = false;
+    mobileJumpQueued = false;
+    setMobileControlsVisible(false);
     isPlaying = false;
     isPaused = false;
     pauseMenu.classList.add('hidden');
@@ -278,6 +461,7 @@
         localPlayerMesh.userData.nameSprite.visible = false;
       }
     }
+    updateMobileCameraBtn();
   }
 
   function enterOrbitMode() {
@@ -322,6 +506,10 @@
     }
     if (isOrbitMode) {
       statusBar.textContent = 'Mode kamera — drag untuk putar karakter | lepas klik kanan untuk lanjut';
+      return;
+    }
+    if (useMobileControls) {
+      statusBar.textContent = 'Joystick: gerak | Area kanan: kamera | Tombol: lari/lompat/chat';
       return;
     }
     if (!pointerLocked) {
@@ -869,7 +1057,7 @@
   }
 
   function updateMovement(dt) {
-    if (!isPlaying || isPaused || !pointerLocked || isOrbitMode) return;
+    if (!isPlaying || isPaused || !canControlMovement()) return;
 
     const forward = new THREE.Vector3(0, 0, -1).applyEuler(new THREE.Euler(0, yaw, 0));
     const right = new THREE.Vector3(1, 0, 0).applyEuler(new THREE.Euler(0, yaw, 0));
@@ -879,33 +1067,46 @@
     isRunning = false;
     isJumping = !isGrounded;
 
-    if (isActionPressed('forward')) {
-      moveX += forward.x;
-      moveZ += forward.z;
-    }
-    if (isActionPressed('backward')) {
-      moveX -= forward.x;
-      moveZ -= forward.z;
-    }
-    if (isActionPressed('left')) {
-      moveX -= right.x;
-      moveZ -= right.z;
-    }
-    if (isActionPressed('right')) {
-      moveX += right.x;
-      moveZ += right.z;
+    if (useMobileControls && hasJoystickInput()) {
+      const jx = mobileStick.x;
+      const jy = mobileStick.y;
+      moveX += forward.x * (-jy) + right.x * jx;
+      moveZ += forward.z * (-jy) + right.z * jx;
+    } else {
+      if (isActionPressed('forward')) {
+        moveX += forward.x;
+        moveZ += forward.z;
+      }
+      if (isActionPressed('backward')) {
+        moveX -= forward.x;
+        moveZ -= forward.z;
+      }
+      if (isActionPressed('left')) {
+        moveX -= right.x;
+        moveZ -= right.z;
+      }
+      if (isActionPressed('right')) {
+        moveX += right.x;
+        moveZ += right.z;
+      }
     }
 
     const isMoving = moveX !== 0 || moveZ !== 0;
     let speed = WALK_SPEED;
+    let goingBackward = false;
 
     if (isMoving) {
       const len = Math.sqrt(moveX * moveX + moveZ * moveZ);
       moveX /= len;
       moveZ /= len;
 
-      const goingBackward = isActionPressed('backward') && !isActionPressed('forward');
-      if (goingBackward && !isActionPressed('left') && !isActionPressed('right')) {
+      if (useMobileControls && hasJoystickInput()) {
+        goingBackward = mobileStick.y > 0.55 && Math.abs(mobileStick.x) < 0.35;
+      } else {
+        goingBackward = isActionPressed('backward') && !isActionPressed('forward');
+      }
+
+      if (goingBackward) {
         speed = BACK_SPEED;
       } else if (isActionPressed('run')) {
         speed = RUN_SPEED;
@@ -924,6 +1125,7 @@
       velocityY = JUMP_FORCE;
       isGrounded = false;
       isJumping = true;
+      mobileJumpQueued = false;
     }
 
     velocityY += GRAVITY * dt;
@@ -1018,7 +1220,7 @@
   }
 
   function openChat() {
-    document.exitPointerLock();
+    if (!useMobileControls) document.exitPointerLock();
     chatInput.classList.add('active');
     chatInput.focus();
   }
@@ -1026,7 +1228,7 @@
   function closeChat() {
     chatInput.blur();
     chatInput.classList.remove('active');
-    if (!isPaused) renderer.domElement.requestPointerLock();
+    if (!isPaused && !useMobileControls) renderer.domElement.requestPointerLock();
   }
 
   function onResize() {
@@ -1058,6 +1260,7 @@
     menuScreen.classList.add('hidden');
     settingsPanel.classList.add('hidden');
     gameUI.classList.remove('hidden');
+    gameUI.style.pointerEvents = useMobileControls ? 'auto' : 'none';
 
     isPlaying = true;
     isPaused = false;
@@ -1070,7 +1273,11 @@
     updateCamera();
     updateStatusBar();
 
-    renderer.domElement.requestPointerLock();
+    if (useMobileControls) {
+      setMobileControlsVisible(true);
+    } else {
+      renderer.domElement.requestPointerLock();
+    }
     socket.emit('setNickname', myNickname);
 
     if (!pingInterval) {
@@ -1222,6 +1429,7 @@
 
   document.addEventListener('click', (e) => {
     if (e.button !== 0) return;
+    if (useMobileControls) return;
     if (
       isPlaying && !isPaused && !isOrbitMode &&
       document.pointerLockElement !== renderer.domElement &&
@@ -1281,6 +1489,7 @@
   });
 
   initThree();
+  initMobileControls();
   renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
   applyCameraMode();
   gameLoop();

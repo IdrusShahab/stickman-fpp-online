@@ -593,3 +593,137 @@ canvas {
   margin-top: 0 !important;
 }
 
+#mobile-controls {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 15;
+  touch-action: none;
+}
+
+#mobile-controls.active {
+  pointer-events: auto;
+}
+
+#joystick-zone {
+  position: absolute;
+  left: 16px;
+  bottom: 24px;
+  width: 140px;
+  height: 140px;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#joystick-base {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.35);
+  border: 2px solid rgba(79, 195, 247, 0.35);
+  backdrop-filter: blur(4px);
+}
+
+#joystick-knob {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  left: 50%;
+  top: 50%;
+  margin-left: -28px;
+  margin-top: -28px;
+  border-radius: 50%;
+  background: rgba(79, 195, 247, 0.75);
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+  transition: background 0.1s;
+}
+
+#joystick-zone.active #joystick-knob {
+  background: rgba(79, 195, 247, 0.95);
+}
+
+#look-zone {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 55%;
+  height: 100%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+#mobile-buttons {
+  position: absolute;
+  right: 16px;
+  bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.mob-btn {
+  min-width: 64px;
+  height: 64px;
+  padding: 0 14px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  color: #e8eaed;
+  font-size: 0.72rem;
+  font-weight: 600;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+  transition: background 0.1s, transform 0.1s;
+}
+
+.mob-btn:active,
+.mob-btn.pressed {
+  background: rgba(79, 195, 247, 0.35);
+  border-color: rgba(79, 195, 247, 0.7);
+  transform: scale(0.94);
+}
+
+.mob-btn-jump {
+  width: 72px;
+  height: 72px;
+  font-size: 0.78rem;
+  background: rgba(2, 136, 209, 0.45);
+  border-color: rgba(79, 195, 247, 0.5);
+}
+
+.mob-btn-run.pressed {
+  background: rgba(255, 183, 77, 0.35);
+  border-color: rgba(255, 183, 77, 0.7);
+}
+
+body.mobile-mode #chat-container {
+  width: calc(100% - 32px);
+  max-width: 420px;
+}
+
+body.mobile-mode #hud-top {
+  font-size: 0.8rem;
+}
+
+body.mobile-mode #player-list {
+  max-height: 120px;
+  min-width: 140px;
+}
+
+body.mobile-mode #status-bar {
+  display: none;
+}
+
+@media (min-width: 1025px) and (hover: hover) {
+  #mobile-controls {
+    display: none !important;
+  }
+}
+
