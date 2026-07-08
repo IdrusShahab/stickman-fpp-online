@@ -32,7 +32,7 @@
     pause: 'Pause'
   };
 
-  const socket = io();
+  let socket = null;
   let myId = null;
   let myNickname = 'Player';
   let roomData = { width: 28, depth: 28, height: 3.4 };
@@ -92,7 +92,6 @@
   const settingsBackBtn = document.getElementById('settings-back-btn');
   const settingsResetBtn = document.getElementById('settings-reset-btn');
   const keybindListEl = document.getElementById('keybind-list');
-  const nicknameInput = document.getElementById('nickname-input');
   const chatInput = document.getElementById('chat-input');
   const chatMessages = document.getElementById('chat-messages');
   const playerListEl = document.getElementById('player-list');
@@ -428,7 +427,7 @@
     try {
       const base64 = await blobToBase64(blob);
       const payload = { audio: base64, mimeType: voiceRecordedMime };
-      socket.emit('voiceNote', payload);
+      socket?.emit('voiceNote', payload);
       playVoiceNote({ id: myId, audio: base64, mimeType: voiceRecordedMime });
     } catch (_) {
       showVoiceToast('Gagal mengirim voice note');
@@ -1572,7 +1571,7 @@
     const now = Date.now();
     if (now - lastMoveSent > 50) {
       lastMoveSent = now;
-      socket.emit('playerMove', {
+      socket?.emit('playerMove', {
         x: position.x,
         y: position.y,
         z: position.z,
@@ -1682,6 +1681,11 @@
   }
 
   function startGame(nickname) {
+    if (!socket?.connected) {
+      statusBar.textContent = 'Menghubungkan ke server...';
+      return;
+    }
+
     myNickname = nickname;
     myNicknameEl.textContent = myNickname;
 
@@ -1706,24 +1710,102 @@
     } else {
       renderer.domElement.requestPointerLock();
     }
-    socket.emit('setNickname', myNickname);
-
     if (!pingInterval) {
       pingInterval = setInterval(() => {
-        socket.emit('ping', Date.now());
+        socket?.emit('ping', Date.now());
       }, 2000);
     }
   }
 
-  playBtn.addEventListener('click', () => {
-    const nick = nicknameInput.value.trim() || `Player${Math.floor(Math.random() * 9000) + 1000}`;
-    startGame(nick);
-  });
+  function bindSocketEvents(sock) {
+    sock.on('init', (data) => {
+      myId = data.id;
+      myNickname = data.nickname;
+      roomData = data.room;
+      partitions = data.partitions || [];
 
-  nicknameInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') {
-      startGame(nicknameInput.value.trim() || `Player${Math.floor(Math.random() * 9000) + 1000}`);
+      createRoom(roomData.width, roomData.depth, roomData.height);
+      data.players.forEach((p) => addRemotePlayer(p));
+      if (isPlaying) createLocalPlayer();
+    });
+
+    sock.on('playerJoined', (player) => addRemotePlayer(player));
+    sock.on('playerLeft', (data) => removeRemotePlayer(data.id));
+
+    sock.on('playerMoved', (data) => {
+      const target = remoteTargets.get(data.id);
+      if (target) {
+        target.x = data.position.x;
+        target.y = data.position.y;
+        target.z = data.position.z;
+        target.rotationY = data.position.rotationY;
+        target.isRunning = data.isRunning;
+        target.isJumping = data.isJumping;
+      }
+    });
+
+    sock.on('playerUpdated', (data) => {
+      const remote = otherPlayers.get(data.id);
+      if (remote) {
+        remote.nickname = data.nickname;
+        updateNameTag(remote.mesh, data.nickname);
+      }
+    });
+
+    sock.on('playerList', (players) => updatePlayerList(players));
+
+    sock.on('pong', (clientTime) => {
+      const ping = Date.now() - clientTime;
+      myPingEl.textContent = `${ping} ms`;
+      myPingEl.className = 'ping' + (ping > 200 ? ' bad' : ping > 100 ? ' high' : '');
+    });
+
+    sock.on('chatMessage', (data) => {
+      addChatMessage(data);
+      showPlayerChatBubble(data.id, data.message);
+    });
+
+    sock.on('voiceNote', (data) => {
+      playVoiceNote(data);
+    });
+
+    sock.on('connect_error', (err) => {
+      console.error('Socket error:', err.message);
+      if (isPlaying) quitToMenu();
+      if (window.GameAuth) window.GameAuth.logout();
+    });
+  }
+
+  function destroySocket() {
+    if (pingInterval) {
+      clearInterval(pingInterval);
+      pingInterval = null;
     }
+    if (socket) {
+      socket.disconnect();
+      socket = null;
+    }
+    myId = null;
+    otherPlayers.forEach((data) => {
+      scene.remove(data.mesh);
+    });
+    otherPlayers.clear();
+    remoteTargets.clear();
+  }
+
+  function connectSocket() {
+    if (!window.GameAuth?.isLoggedIn()) return;
+    if (socket?.connected) return;
+
+    const token = window.GameAuth.getToken();
+    socket = io({ auth: { token } });
+    bindSocketEvents(socket);
+  }
+
+  playBtn.addEventListener('click', () => {
+    const user = window.GameAuth?.getUser();
+    if (!user) return;
+    startGame(user.displayName);
   });
 
   mainSettingsBtn.addEventListener('click', () => openSettings('menu'));
@@ -1816,7 +1898,7 @@
     if (e.key === 'Enter') {
       const msg = chatInput.value.trim();
       if (msg) {
-        socket.emit('chatMessage', msg);
+        socket?.emit('chatMessage', msg);
       }
       chatInput.value = '';
       closeChat();
@@ -1879,56 +1961,10 @@
     }
   });
 
-  socket.on('init', (data) => {
-    myId = data.id;
-    myNickname = data.nickname;
-    roomData = data.room;
-    partitions = data.partitions || [];
-    nicknameInput.value = data.nickname;
-
-    createRoom(roomData.width, roomData.depth, roomData.height);
-    data.players.forEach((p) => addRemotePlayer(p));
-    if (isPlaying) createLocalPlayer();
-  });
-
-  socket.on('playerJoined', (player) => addRemotePlayer(player));
-  socket.on('playerLeft', (data) => removeRemotePlayer(data.id));
-
-  socket.on('playerMoved', (data) => {
-    const target = remoteTargets.get(data.id);
-    if (target) {
-      target.x = data.position.x;
-      target.y = data.position.y;
-      target.z = data.position.z;
-      target.rotationY = data.position.rotationY;
-      target.isRunning = data.isRunning;
-      target.isJumping = data.isJumping;
-    }
-  });
-
-  socket.on('playerUpdated', (data) => {
-    const remote = otherPlayers.get(data.id);
-    if (remote) {
-      remote.nickname = data.nickname;
-      updateNameTag(remote.mesh, data.nickname);
-    }
-  });
-
-  socket.on('playerList', (players) => updatePlayerList(players));
-
-  socket.on('pong', (clientTime) => {
-    const ping = Date.now() - clientTime;
-    myPingEl.textContent = `${ping} ms`;
-    myPingEl.className = 'ping' + (ping > 200 ? ' bad' : ping > 100 ? ' high' : '');
-  });
-
-  socket.on('chatMessage', (data) => {
-    addChatMessage(data);
-    showPlayerChatBubble(data.id, data.message);
-  });
-
-  socket.on('voiceNote', (data) => {
-    playVoiceNote(data);
+  document.addEventListener('auth:login', () => connectSocket());
+  document.addEventListener('auth:logout', () => {
+    destroySocket();
+    quitToMenu();
   });
 
   initThree();

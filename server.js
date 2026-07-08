@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const { registerUser, loginUser, verifyToken } = require('./auth-service');
 
 const app = express();
 const server = http.createServer(app);
@@ -11,6 +12,39 @@ const io = new Server(server, {
 });
 
 const PORT = process.env.PORT || 3000;
+
+app.use(express.json({ limit: '1mb' }));
+
+app.post('/api/auth/register', (req, res) => {
+  const result = registerUser(req.body || {});
+  if (result.error) {
+    return res.status(400).json({ error: result.error });
+  }
+  res.json(result);
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body || {};
+  const result = loginUser(username, password);
+  if (result.error) {
+    return res.status(401).json({ error: result.error });
+  }
+  res.json(result);
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  if (!token) {
+    return res.status(401).json({ error: 'Token tidak ditemukan' });
+  }
+  try {
+    const user = verifyToken(token);
+    res.json({ user });
+  } catch {
+    res.status(401).json({ error: 'Sesi tidak valid' });
+  }
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -87,6 +121,7 @@ function getPlayerList() {
   return Array.from(players.values()).map((p) => ({
     id: p.id,
     nickname: p.nickname,
+    username: p.username,
     ping: p.ping,
     position: p.position,
     isRunning: p.isRunning,
@@ -94,12 +129,28 @@ function getPlayerList() {
   }));
 }
 
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token;
+  if (!token) {
+    return next(new Error('Login diperlukan'));
+  }
+  try {
+    socket.account = verifyToken(token);
+    next();
+  } catch {
+    next(new Error('Sesi tidak valid, silakan login ulang'));
+  }
+});
+
 io.on('connection', (socket) => {
-  const defaultName = `Player${Math.floor(Math.random() * 9000) + 1000}`;
+  const account = socket.account;
+  const displayName = account.displayName;
 
   players.set(socket.id, {
     id: socket.id,
-    nickname: defaultName,
+    userId: account.id,
+    username: account.username,
+    nickname: displayName,
     ping: 0,
     position: { x: 0, y: 0, z: 0, rotationY: 0 },
     isRunning: false,
@@ -109,7 +160,8 @@ io.on('connection', (socket) => {
 
   socket.emit('init', {
     id: socket.id,
-    nickname: defaultName,
+    nickname: displayName,
+    username: account.username,
     room: ROOM,
     partitions: PARTITIONS,
     players: getPlayerList()
@@ -117,23 +169,9 @@ io.on('connection', (socket) => {
 
   io.emit('playerJoined', {
     id: socket.id,
-    nickname: defaultName,
+    nickname: displayName,
     ping: 0,
     position: { x: 0, y: 0, z: 0, rotationY: 0 }
-  });
-
-  socket.on('setNickname', (nickname) => {
-    const player = players.get(socket.id);
-    if (!player) return;
-
-    const clean = String(nickname || '').trim().slice(0, 16);
-    if (!clean) return;
-
-    player.nickname = clean;
-    io.emit('playerUpdated', {
-      id: socket.id,
-      nickname: player.nickname
-    });
   });
 
   socket.on('ping', (clientTime) => {
@@ -218,4 +256,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Stickman FPP server running on port ${PORT}`);
   console.log(`Local:   http://localhost:${PORT}`);
   console.log(`Network: http://<IP-PC-KAMU>:${PORT}`);
+  if (!process.env.JWT_SECRET) {
+    console.warn('WARNING: JWT_SECRET tidak diset. Gunakan env JWT_SECRET di production.');
+  }
 });

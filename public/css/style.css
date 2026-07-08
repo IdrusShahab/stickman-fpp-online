@@ -15,6 +15,7 @@ body {
   display: none !important;
 }
 
+#auth-screen,
 #menu-screen {
   position: fixed;
   inset: 0;
@@ -23,6 +24,108 @@ body {
   justify-content: center;
   background: linear-gradient(135deg, #0f1117 0%, #1a1f2e 50%, #0f1117 100%);
   z-index: 100;
+}
+
+.auth-card {
+  background: rgba(26, 31, 46, 0.95);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 36px;
+  max-width: 420px;
+  width: 90%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.auth-card h1 {
+  font-size: 1.8rem;
+  margin-bottom: 8px;
+  color: #4fc3f7;
+}
+
+.auth-card p {
+  color: #9aa0a6;
+  margin-bottom: 20px;
+  font-size: 0.9rem;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.auth-tab {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #bdc1c6;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.auth-tab.active {
+  background: rgba(79, 195, 247, 0.2);
+  border-color: #4fc3f7;
+  color: #fff;
+}
+
+.auth-form {
+  text-align: left;
+}
+
+.auth-form label {
+  display: block;
+  margin: 10px 0 6px;
+  font-size: 0.85rem;
+  color: #bdc1c6;
+}
+
+.auth-form input {
+  width: 100%;
+  padding: 11px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #fff;
+  font-size: 0.95rem;
+  outline: none;
+  margin-bottom: 4px;
+}
+
+.auth-form input:focus {
+  border-color: #4fc3f7;
+}
+
+.auth-form .btn-primary {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.auth-error {
+  color: #ff8a80;
+  font-size: 0.85rem;
+  margin-bottom: 12px;
+  text-align: left;
+  padding: 10px 12px;
+  background: rgba(255, 82, 82, 0.12);
+  border-radius: 8px;
+  border: 1px solid rgba(255, 82, 82, 0.25);
+}
+
+.welcome-user {
+  margin-bottom: 16px !important;
+  color: #e8eaed !important;
+}
+
+.welcome-user strong {
+  color: #4fc3f7;
+}
+
+.btn-logout {
+  margin-top: 8px;
 }
 
 .menu-card {
