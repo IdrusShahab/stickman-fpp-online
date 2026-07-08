@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-DOMAIN="idrusrandon.web.id"
+DOMAIN="idrusrandom.web.id"
 APP_PORT=3000
 EMAIL="${SSL_EMAIL:-}"
 
