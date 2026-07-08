@@ -1031,7 +1031,7 @@
     const box = new THREE.Box3().setFromObject(obj);
     const size = new THREE.Vector3();
     box.getSize(size);
-    const targetW = 1.35;
+    const targetW = 1.65;
     const scale = targetW / Math.max(size.x, size.z, 0.001);
     obj.scale.setScalar(scale);
     box.setFromObject(obj);
