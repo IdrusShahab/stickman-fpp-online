@@ -35,7 +35,7 @@
   const socket = io();
   let myId = null;
   let myNickname = 'Player';
-  let roomData = { width: 20, depth: 20, height: 6 };
+  let roomData = { width: 28, depth: 28, height: 6 };
 
   const otherPlayers = new Map();
   const remoteTargets = new Map();
@@ -747,7 +747,7 @@
   function initThree() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1f2e);
-    scene.fog = new THREE.Fog(0x1a1f2e, 15, 35);
+    scene.fog = new THREE.Fog(0x1a1f2e, 20, 50);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.rotation.order = 'YXZ';
@@ -768,10 +768,10 @@
     mainLight.shadow.mapSize.set(1024, 1024);
     mainLight.shadow.camera.near = 0.5;
     mainLight.shadow.camera.far = 40;
-    mainLight.shadow.camera.left = -15;
-    mainLight.shadow.camera.right = 15;
-    mainLight.shadow.camera.top = 15;
-    mainLight.shadow.camera.bottom = -15;
+    mainLight.shadow.camera.left = -20;
+    mainLight.shadow.camera.right = 20;
+    mainLight.shadow.camera.top = 20;
+    mainLight.shadow.camera.bottom = -20;
     scene.add(mainLight);
 
     const fillLight = new THREE.PointLight(0x4fc3f7, 0.3, 30);
@@ -830,7 +830,91 @@
       scene.add(bb);
     });
 
+    addRoomWindows(w, d, h, hw, hd);
     addRoomFurniture(w, d, h);
+  }
+
+  function createWindow(wallX, wallY, wallZ, rotY) {
+    const group = new THREE.Group();
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x3a4555, roughness: 0.6 });
+    const glassMat = new THREE.MeshStandardMaterial({
+      color: 0x89cff0,
+      transparent: true,
+      opacity: 0.45,
+      roughness: 0.05,
+      metalness: 0.15
+    });
+    const sillMat = new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.7 });
+
+    const winW = 2.2;
+    const winH = 1.6;
+    const frameT = 0.1;
+
+    const topFrame = new THREE.Mesh(new THREE.BoxGeometry(winW, frameT, frameT), frameMat);
+    topFrame.position.y = winH / 2;
+    group.add(topFrame);
+
+    const bottomFrame = new THREE.Mesh(new THREE.BoxGeometry(winW, frameT, frameT), frameMat);
+    bottomFrame.position.y = -winH / 2;
+    group.add(bottomFrame);
+
+    const leftFrame = new THREE.Mesh(new THREE.BoxGeometry(frameT, winH, frameT), frameMat);
+    leftFrame.position.x = -winW / 2;
+    group.add(leftFrame);
+
+    const rightFrame = new THREE.Mesh(new THREE.BoxGeometry(frameT, winH, frameT), frameMat);
+    rightFrame.position.x = winW / 2;
+    group.add(rightFrame);
+
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(winW - frameT * 2, winH - frameT * 2), glassMat);
+    group.add(glass);
+
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(winW + 0.2, 0.08, 0.2), sillMat);
+    sill.position.y = -winH / 2 - 0.1;
+    group.add(sill);
+
+    group.position.set(wallX, wallY, wallZ);
+    group.rotation.y = rotY;
+    group.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+    scene.add(group);
+  }
+
+  function addRoomWindows(w, d, h, hw, hd) {
+    const winY = h * 0.48;
+    const inset = 0.06;
+    const positions = [-9, 0, 9];
+
+    positions.forEach((x) => createWindow(x, winY, -hd + inset, 0));
+    positions.forEach((x) => createWindow(x, winY, hd - inset, Math.PI));
+    positions.forEach((z) => createWindow(-hw + inset, winY, z, Math.PI / 2));
+    positions.forEach((z) => createWindow(hw - inset, winY, z, -Math.PI / 2));
+  }
+
+  function createChair(x, z, rotY) {
+    const group = new THREE.Group();
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 0.75 });
+    const darkWood = new THREE.MeshStandardMaterial({ color: 0x4e342e, roughness: 0.8 });
+
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, 0.45), woodMat);
+    seat.position.y = 0.46;
+    group.add(seat);
+
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.05), woodMat);
+    back.position.set(0, 0.72, -0.2);
+    group.add(back);
+
+    const legGeo = new THREE.CylinderGeometry(0.03, 0.035, 0.46, 6);
+    [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]].forEach(([lx, lz]) => {
+      const leg = new THREE.Mesh(legGeo, darkWood);
+      leg.position.set(lx, 0.23, lz);
+      group.add(leg);
+    });
+
+    group.position.set(x, 0, z);
+    group.rotation.y = rotY;
+    group.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+    scene.add(group);
+    return group;
   }
 
   function addRoomFurniture(w, d, h) {
@@ -838,20 +922,20 @@
     const tableMat = new THREE.MeshStandardMaterial({ color: 0x6b5344, roughness: 0.7 });
 
     const crate = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), boxMat);
-    crate.position.set(-6, 0.6, -6);
+    crate.position.set(-9, 0.6, -9);
     crate.castShadow = true;
     crate.receiveShadow = true;
     scene.add(crate);
 
-    const table = new THREE.Mesh(new THREE.BoxGeometry(2, 0.1, 1), tableMat);
-    table.position.set(5, 0.75, 4);
+    const table = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 1.2), tableMat);
+    table.position.set(6, 0.75, 5);
     table.castShadow = true;
     scene.add(table);
 
     const legGeo = new THREE.BoxGeometry(0.1, 0.75, 0.1);
-    [[-0.9, 3.5], [0.9, 3.5], [-0.9, 4.5], [0.9, 4.5]].forEach(([lx, lz]) => {
+    [[-1.0, 4.4], [1.0, 4.4], [-1.0, 5.6], [1.0, 5.6]].forEach(([lx, lz]) => {
       const leg = new THREE.Mesh(legGeo, tableMat);
-      leg.position.set(5 + lx, 0.375, lz);
+      leg.position.set(6 + lx, 0.375, lz);
       leg.castShadow = true;
       scene.add(leg);
     });
@@ -860,6 +944,19 @@
     pillar.position.set(0, h / 2, 0);
     pillar.castShadow = true;
     scene.add(pillar);
+
+    const chairs = [
+      [6, 6.8, Math.PI],
+      [7.2, 5, -Math.PI / 2],
+      [4.8, 5, Math.PI / 2],
+      [6, 3.5, 0],
+      [-4, -3, Math.PI / 4],
+      [-2, 8, -Math.PI / 2],
+      [10, -6, Math.PI],
+      [-10, 4, 0],
+      [3, -8, Math.PI / 2]
+    ];
+    chairs.forEach(([x, z, rot]) => createChair(x, z, rot));
   }
 
   function createStickman(color, showNameTag) {

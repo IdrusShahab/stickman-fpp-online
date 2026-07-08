@@ -17,8 +17,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 const players = new Map();
 
 const ROOM = {
-  width: 20,
-  depth: 20,
+  width: 28,
+  depth: 28,
   height: 6
 };
 
