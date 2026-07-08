@@ -44,7 +44,9 @@
 
   let scene, camera, renderer;
   let roomGroup = null;
+  let deskModelTemplate = null;
   let localPlayerMesh = null;
+  const FURNITURE_SEED = 77441;
   let isPlaying = false;
   let isPaused = false;
   let pointerLocked = false;
@@ -968,6 +970,146 @@
     }
   }
 
+  function furnitureRandom(seed) {
+    let state = seed >>> 0;
+    return () => {
+      state = (state * 1664525 + 1013904223) >>> 0;
+      return state / 0x100000000;
+    };
+  }
+
+  function isFurnitureBlocked(x, z, radius) {
+    const margin = 0.5;
+    const hw = roomData.width / 2 - margin - radius;
+    const hd = roomData.depth / 2 - margin - radius;
+    if (x < -hw || x > hw || z < -hd || z > hd) return true;
+
+    for (const wall of partitions) {
+      const dx = Math.abs(x - wall.x);
+      const dz = Math.abs(z - wall.z);
+      if (dx < wall.w / 2 + radius && dz < wall.d / 2 + radius) return true;
+    }
+    return false;
+  }
+
+  function isTooClose(x, z, placed, minDist) {
+    const minDistSq = minDist * minDist;
+    return placed.some((p) => {
+      const dx = p.x - x;
+      const dz = p.z - z;
+      return dx * dx + dz * dz < minDistSq;
+    });
+  }
+
+  function loadDeskModel() {
+    if (deskModelTemplate) return Promise.resolve(deskModelTemplate);
+    return new Promise((resolve, reject) => {
+      const loader = new THREE.FBXLoader();
+      loader.load(
+        '/models/Meja.fbx',
+        (obj) => {
+          obj.traverse((child) => {
+            if (!child.isMesh) return;
+            const mat = new THREE.MeshStandardMaterial({ color: 0x6b5344, roughness: 0.72, metalness: 0.05 });
+            child.material = mat;
+          });
+          const box = new THREE.Box3().setFromObject(obj);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const targetH = 0.75;
+          const scale = targetH / Math.max(size.y, 0.001);
+          obj.scale.setScalar(scale);
+          box.setFromObject(obj);
+          obj.position.y = -box.min.y;
+          deskModelTemplate = obj;
+          resolve(obj);
+        },
+        undefined,
+        reject
+      );
+    });
+  }
+
+  function createChairMesh() {
+    const group = new THREE.Group();
+    const woodMat = new THREE.MeshStandardMaterial({ color: 0x6d4c41, roughness: 0.75 });
+    const darkWood = new THREE.MeshStandardMaterial({ color: 0x4e342e, roughness: 0.8 });
+
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.06, 0.45), woodMat);
+    seat.position.y = 0.46;
+    group.add(seat);
+
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.05), woodMat);
+    back.position.set(0, 0.72, -0.2);
+    group.add(back);
+
+    const legGeo = new THREE.CylinderGeometry(0.03, 0.035, 0.46, 6);
+    [[-0.17, -0.17], [0.17, -0.17], [-0.17, 0.17], [0.17, 0.17]].forEach(([lx, lz]) => {
+      const leg = new THREE.Mesh(legGeo, darkWood);
+      leg.position.set(lx, 0.23, lz);
+      group.add(leg);
+    });
+
+    return group;
+  }
+
+  function tryPlaceFurniture(rand, placed, radius, minDist, hw, hd) {
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const x = (rand() * 2 - 1) * (hw - 4);
+      const z = (rand() * 2 - 1) * (hd - 4);
+      if (isFurnitureBlocked(x, z, radius)) continue;
+      if (isTooClose(x, z, placed, minDist)) continue;
+      const rotY = rand() * Math.PI * 2;
+      placed.push({ x, z, rotY });
+      return { x, z, rotY };
+    }
+    return null;
+  }
+
+  function addRandomFurniture(w, d) {
+    if (!roomGroup || !deskModelTemplate) return;
+
+    const rand = furnitureRandom(FURNITURE_SEED);
+    const hw = w / 2;
+    const hd = d / 2;
+    const placed = [];
+    const deskCount = 42;
+    const chairCount = 68;
+
+    for (let i = 0; i < deskCount; i++) {
+      const spot = tryPlaceFurniture(rand, placed, 1.1, 2.8, hw, hd);
+      if (!spot) continue;
+
+      const desk = deskModelTemplate.clone(true);
+      desk.position.set(spot.x, 0, spot.z);
+      desk.rotation.y = spot.rotY;
+      roomGroup.add(desk);
+
+      if (rand() < 0.55) {
+        const offX = (rand() - 0.5) * 1.6;
+        const offZ = 0.85 + rand() * 0.35;
+        const cx = spot.x + Math.sin(spot.rotY) * offZ + Math.cos(spot.rotY) * offX;
+        const cz = spot.z + Math.cos(spot.rotY) * offZ - Math.sin(spot.rotY) * offX;
+        if (!isFurnitureBlocked(cx, cz, 0.45) && !isTooClose(cx, cz, placed, 1.0)) {
+          const chair = createChairMesh();
+          chair.position.set(cx, 0, cz);
+          chair.rotation.y = spot.rotY + Math.PI + (rand() - 0.5) * 0.4;
+          roomGroup.add(chair);
+          placed.push({ x: cx, z: cz, rotY: chair.rotation.y });
+        }
+      }
+    }
+
+    for (let i = 0; i < chairCount; i++) {
+      const spot = tryPlaceFurniture(rand, placed, 0.45, 1.4, hw, hd);
+      if (!spot) continue;
+      const chair = createChairMesh();
+      chair.position.set(spot.x, 0, spot.z);
+      chair.rotation.y = spot.rotY;
+      roomGroup.add(chair);
+    }
+  }
+
   function createRoom(w, d, h) {
     clearRoom();
     roomGroup = new THREE.Group();
@@ -1034,6 +1176,10 @@
     addPartitionWalls(h, mats);
     addFluorescentGrid(w, d, h);
     scene.add(roomGroup);
+
+    loadDeskModel()
+      .then(() => addRandomFurniture(w, d))
+      .catch((err) => console.error('Gagal memuat model meja:', err));
   }
 
   function createStickman(color, showNameTag) {
