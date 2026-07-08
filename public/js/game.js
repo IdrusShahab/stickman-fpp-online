@@ -143,6 +143,20 @@
   const VOICE_MAX_BYTES = 500000;
   const VOICE_MIN_BYTES = 200;
 
+  function clampPing(ms) {
+    if (!Number.isFinite(ms)) return 0;
+    return Math.max(0, Math.min(999, Math.round(ms)));
+  }
+
+  function formatPing(ms) {
+    return `${clampPing(ms)} ms`;
+  }
+
+  function pingClass(ms) {
+    const ping = clampPing(ms);
+    return 'ping' + (ping > 200 ? ' bad' : ping > 100 ? ' high' : '');
+  }
+
   function isMobileDevice() {
     const touch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const narrow = window.innerWidth <= 1024;
@@ -1904,7 +1918,7 @@
       const isMe = p.id === myId;
       item.innerHTML = `
         <span class="name ${isMe ? 'me' : ''}">${escapeHtml(p.nickname)}${isMe ? ' (kamu)' : ''}</span>
-        <span class="ping-val">${p.ping} ms</span>
+        <span class="ping-val">${formatPing(p.ping)}</span>
       `;
       playerListEl.appendChild(item);
 
@@ -1918,8 +1932,8 @@
 
     const me = players.find((p) => p.id === myId);
     if (me) {
-      myPingEl.textContent = `${me.ping} ms`;
-      myPingEl.className = 'ping' + (me.ping > 200 ? ' bad' : me.ping > 100 ? ' high' : '');
+      myPingEl.textContent = formatPing(me.ping);
+      myPingEl.className = pingClass(me.ping);
     }
   }
 
@@ -2005,11 +2019,6 @@
     } else {
       renderer.domElement.requestPointerLock();
     }
-    if (!pingInterval) {
-      pingInterval = setInterval(() => {
-        socket?.emit('ping', Date.now());
-      }, 2000);
-    }
   }
 
   function bindSocketEvents(sock) {
@@ -2050,9 +2059,10 @@
     sock.on('playerList', (players) => updatePlayerList(players));
 
     sock.on('pong', (clientTime) => {
-      const ping = Date.now() - clientTime;
-      myPingEl.textContent = `${ping} ms`;
-      myPingEl.className = 'ping' + (ping > 200 ? ' bad' : ping > 100 ? ' high' : '');
+      const ping = clampPing(Date.now() - clientTime);
+      myPingEl.textContent = formatPing(ping);
+      myPingEl.className = pingClass(ping);
+      sock.emit('pingUpdate', ping);
     });
 
     sock.on('chatMessage', (data) => {
@@ -2088,6 +2098,13 @@
     remoteTargets.clear();
   }
 
+  function startPingInterval() {
+    if (pingInterval) return;
+    pingInterval = setInterval(() => {
+      socket?.emit('ping', Date.now());
+    }, 2000);
+  }
+
   function connectSocket() {
     if (!window.GameAuth?.isLoggedIn()) return;
     if (socket?.connected) return;
@@ -2095,6 +2112,8 @@
     const token = window.GameAuth.getToken();
     socket = io({ auth: { token } });
     bindSocketEvents(socket);
+    socket.on('connect', startPingInterval);
+    if (socket.connected) startPingInterval();
   }
 
   playBtn.addEventListener('click', () => {

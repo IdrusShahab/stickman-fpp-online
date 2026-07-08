@@ -94,6 +94,11 @@ function clampPosition(pos) {
   };
 }
 
+function clampPing(ms) {
+  if (!Number.isFinite(ms)) return 0;
+  return Math.max(0, Math.min(999, Math.round(ms)));
+}
+
 function getPlayerList() {
   return Array.from(players.values()).map((p) => ({
     id: p.id,
@@ -152,12 +157,14 @@ io.on('connection', (socket) => {
   });
 
   socket.on('ping', (clientTime) => {
-    const player = players.get(socket.id);
-    if (player) {
-      player.ping = Date.now() - clientTime;
-      player.lastPingTime = Date.now();
-    }
     socket.emit('pong', clientTime);
+  });
+
+  socket.on('pingUpdate', (ping) => {
+    const player = players.get(socket.id);
+    if (!player) return;
+    player.ping = clampPing(ping);
+    player.lastPingTime = Date.now();
   });
 
   socket.on('playerMove', (data) => {
