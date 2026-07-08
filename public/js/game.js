@@ -1008,13 +1008,51 @@
     });
   }
 
+  function normalizeDeskMaterials(obj) {
+    obj.traverse((child) => {
+      if (!child.isMesh) return;
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      const converted = mats.map((mat) => {
+        if (!mat) return new THREE.MeshStandardMaterial({ color: 0x6b5344, roughness: 0.72 });
+        if (mat.isMeshStandardMaterial) return mat;
+        return new THREE.MeshStandardMaterial({
+          color: mat.color ? mat.color.clone() : new THREE.Color(0x6b5344),
+          map: mat.map || null,
+          roughness: 0.72,
+          metalness: 0.05
+        });
+      });
+      child.material = converted.length === 1 ? converted[0] : converted;
+    });
+  }
+
+  function prepareDeskTemplate(obj) {
+    normalizeDeskMaterials(obj);
+    const box = new THREE.Box3().setFromObject(obj);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const targetW = 1.35;
+    const scale = targetW / Math.max(size.x, size.z, 0.001);
+    obj.scale.setScalar(scale);
+    box.setFromObject(obj);
+    obj.position.set(0, -box.min.y, 0);
+    return obj;
+  }
+
   function loadDeskModel() {
     if (deskModelTemplate) return Promise.resolve(deskModelTemplate);
     if (deskLoadPromise) return deskLoadPromise;
 
     deskLoadPromise = new Promise((resolve) => {
       if (typeof THREE.FBXLoader !== 'function') {
-        console.warn('FBXLoader tidak tersedia, pakai meja fallback');
+        console.error('FBXLoader tidak tersedia');
+        deskLoadPromise = null;
+        resolve(null);
+        return;
+      }
+      if (typeof fflate === 'undefined') {
+        console.error('fflate tidak tersedia — Meja.fbx tidak bisa dimuat');
+        deskLoadPromise = null;
         resolve(null);
         return;
       }
@@ -1023,28 +1061,13 @@
       loader.load(
         '/models/Meja.fbx',
         (obj) => {
-          obj.traverse((child) => {
-            if (!child.isMesh) return;
-            child.material = new THREE.MeshStandardMaterial({
-              color: 0x6b5344,
-              roughness: 0.72,
-              metalness: 0.05
-            });
-          });
-          const box = new THREE.Box3().setFromObject(obj);
-          const size = new THREE.Vector3();
-          box.getSize(size);
-          const targetH = 0.75;
-          const scale = targetH / Math.max(size.y, 0.001);
-          obj.scale.setScalar(scale);
-          box.setFromObject(obj);
-          obj.position.y = -box.min.y;
-          deskModelTemplate = obj;
-          resolve(obj);
+          deskModelTemplate = prepareDeskTemplate(obj);
+          resolve(deskModelTemplate);
         },
         undefined,
         (err) => {
-          console.warn('Gagal memuat Meja.fbx, pakai meja fallback:', err);
+          console.error('Gagal memuat Meja.fbx:', err);
+          deskLoadPromise = null;
           resolve(null);
         }
       );
@@ -1120,29 +1143,29 @@
     const placed = [];
     const desks = [];
     const chairs = [];
-    const deskCount = 42;
-    const chairCount = 68;
+    const deskCount = 20;
+    const extraChairCount = 5;
 
     for (let i = 0; i < deskCount; i++) {
-      const spot = tryPlaceFurniture(rand, placed, 1.1, 2.8, hw, hd);
+      const spot = tryPlaceFurniture(rand, placed, 1.1, 3.2, hw, hd);
       if (!spot) continue;
       desks.push(spot);
 
-      if (rand() < 0.55) {
-        const offX = (rand() - 0.5) * 1.6;
-        const offZ = 0.85 + rand() * 0.35;
+      if (rand() < 0.4) {
+        const offX = (rand() - 0.5) * 1.2;
+        const offZ = 0.9 + rand() * 0.25;
         const cx = spot.x + Math.sin(spot.rotY) * offZ + Math.cos(spot.rotY) * offX;
         const cz = spot.z + Math.cos(spot.rotY) * offZ - Math.sin(spot.rotY) * offX;
-        if (!isFurnitureBlocked(cx, cz, 0.45) && !isTooClose(cx, cz, placed, 1.0)) {
-          const rotY = spot.rotY + Math.PI + (rand() - 0.5) * 0.4;
+        if (!isFurnitureBlocked(cx, cz, 0.45) && !isTooClose(cx, cz, placed, 1.2)) {
+          const rotY = spot.rotY + Math.PI + (rand() - 0.5) * 0.3;
           chairs.push({ x: cx, z: cz, rotY });
           placed.push({ x: cx, z: cz, rotY });
         }
       }
     }
 
-    for (let i = 0; i < chairCount; i++) {
-      const spot = tryPlaceFurniture(rand, placed, 0.45, 1.4, hw, hd);
+    for (let i = 0; i < extraChairCount; i++) {
+      const spot = tryPlaceFurniture(rand, placed, 0.45, 2.0, hw, hd);
       if (!spot) continue;
       chairs.push(spot);
     }
@@ -1177,12 +1200,6 @@
     });
 
     roomGroup.add(furnitureGroup);
-  }
-
-  function addRandomFurniture(w, d, buildId) {
-    if (!roomGroup) return;
-    furnitureSpots = computeFurnitureSpots(w, d);
-    buildFurnitureMeshes(buildId);
   }
 
   function createRoom(w, d, h) {
@@ -1254,7 +1271,7 @@
     addFluorescentGrid(w, d, h);
     scene.add(roomGroup);
 
-    addRandomFurniture(w, d, buildId);
+    furnitureSpots = computeFurnitureSpots(w, d);
 
     loadDeskModel().then(() => {
       if (buildId !== roomBuildId) return;
