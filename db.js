@@ -18,7 +18,13 @@ db.exec(`
     password_hash TEXT NOT NULL,
     display_name TEXT NOT NULL,
     created_at INTEGER NOT NULL
-  )
+  );
+
+  CREATE TABLE IF NOT EXISTS user_settings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    settings_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `);
 
 module.exports = db;

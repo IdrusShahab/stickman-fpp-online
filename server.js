@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const { registerUser, loginUser, verifyToken } = require('./auth-service');
+const { getUserSettings, saveUserSettings } = require('./settings-service');
 const { ROOM, PARTITIONS, resolvePartitions } = require('./room-layout');
 
 const app = express();
@@ -33,18 +34,41 @@ app.post('/api/auth/login', (req, res) => {
   res.json(result);
 });
 
-app.get('/api/auth/me', (req, res) => {
+function getAuthUser(req) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) {
-    return res.status(401).json({ error: 'Token tidak ditemukan' });
-  }
+  if (!token) return null;
   try {
-    const user = verifyToken(token);
-    res.json({ user });
+    return verifyToken(token);
   } catch {
-    res.status(401).json({ error: 'Sesi tidak valid' });
+    return null;
   }
+}
+
+app.get('/api/auth/me', (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Sesi tidak valid' });
+  }
+  res.json({ user });
+});
+
+app.get('/api/settings', (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Sesi tidak valid' });
+  }
+  const settings = getUserSettings(user.id);
+  res.json({ settings });
+});
+
+app.put('/api/settings', (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) {
+    return res.status(401).json({ error: 'Sesi tidak valid' });
+  }
+  const saved = saveUserSettings(user.id, req.body?.settings || req.body);
+  res.json({ settings: saved });
 });
 
 app.use(express.static(path.join(__dirname, 'public')));

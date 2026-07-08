@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  const STORAGE_KEY = 'stickman-game-settings';
+  const LEGACY_STORAGE_KEY = 'stickman-game-settings';
 
   const DEFAULT_SETTINGS = {
     cameraMode: 'fpp',
@@ -83,7 +83,9 @@
   let orbitYaw = 0;
   let orbitPitch = 0.4;
 
-  let settings = loadSettings();
+  let settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+  let currentSettingsUserId = null;
+  let settingsSaveTimer = null;
   let rebindingAction = null;
 
   const menuScreen = document.getElementById('menu-screen');
@@ -489,25 +491,91 @@
     mobBtnCamera.textContent = settings.cameraMode === 'tpp' ? 'TPP' : 'FPP';
   }
 
-  function loadSettings() {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        const keybinds = { ...DEFAULT_SETTINGS.keybinds, ...parsed.keybinds };
-        if (keybinds.pause === 'Escape') keybinds.pause = 'KeyP';
+  function getSettingsStorageKey(userId) {
+    return `stickman-settings-${userId}`;
+  }
 
-        return {
-          cameraMode: parsed.cameraMode || DEFAULT_SETTINGS.cameraMode,
-          keybinds
-        };
-      }
+  function normalizeSettings(parsed) {
+    if (!parsed || typeof parsed !== 'object') return null;
+    const keybinds = { ...DEFAULT_SETTINGS.keybinds, ...parsed.keybinds };
+    if (keybinds.pause === 'Escape') keybinds.pause = 'KeyP';
+    return {
+      cameraMode: parsed.cameraMode || DEFAULT_SETTINGS.cameraMode,
+      keybinds
+    };
+  }
+
+  function loadSettingsFromStorage(userId) {
+    try {
+      const saved = localStorage.getItem(getSettingsStorageKey(userId));
+      if (saved) return normalizeSettings(JSON.parse(saved));
+
+      const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacy) return normalizeSettings(JSON.parse(legacy));
     } catch (_) { /* ignore */ }
-    return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    return null;
+  }
+
+  async function settingsApi(method, body) {
+    const token = window.GameAuth?.getToken();
+    if (!token) return null;
+
+    const opts = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      }
+    };
+    if (body) opts.body = JSON.stringify(body);
+
+    const res = await fetch('/api/settings', opts);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(data.error || 'Gagal menyimpan pengaturan');
+    }
+    return data;
+  }
+
+  function applySettingsState() {
+    applyCameraMode();
+    updateMobileCameraBtn();
+    if (!settingsPanel.classList.contains('hidden')) buildSettingsUI();
+  }
+
+  async function syncSettingsOnLogin(user) {
+    if (!user?.id) return;
+    currentSettingsUserId = user.id;
+
+    try {
+      const data = await settingsApi('GET');
+      if (data?.settings) {
+        settings = data.settings;
+      } else {
+        const local = loadSettingsFromStorage(user.id);
+        settings = local || JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+        await settingsApi('PUT', { settings });
+      }
+      localStorage.setItem(getSettingsStorageKey(user.id), JSON.stringify(settings));
+    } catch (err) {
+      console.warn('Settings sync failed:', err);
+      const local = loadSettingsFromStorage(user.id);
+      if (local) settings = local;
+    }
+
+    applySettingsState();
   }
 
   function saveSettings() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    if (!currentSettingsUserId) return;
+
+    localStorage.setItem(getSettingsStorageKey(currentSettingsUserId), JSON.stringify(settings));
+    clearTimeout(settingsSaveTimer);
+    settingsSaveTimer = setTimeout(() => {
+      settingsApi('PUT', { settings }).catch((err) => {
+        console.warn('Save settings failed:', err);
+      });
+    }, 400);
   }
 
   function codeToLabel(code) {
@@ -2188,8 +2256,16 @@
     }
   });
 
-  document.addEventListener('auth:login', () => connectSocket());
+  document.addEventListener('auth:login', async (e) => {
+    await syncSettingsOnLogin(e.detail);
+    connectSocket();
+  });
   document.addEventListener('auth:logout', () => {
+    clearTimeout(settingsSaveTimer);
+    settingsSaveTimer = null;
+    currentSettingsUserId = null;
+    settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    applySettingsState();
     destroySocket();
     quitToMenu();
   });
