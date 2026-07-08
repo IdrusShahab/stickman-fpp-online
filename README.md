@@ -73,6 +73,29 @@ Atau manual:
 | Mic (tahan) | Voice note |
 | Insert (tahan, PC) | Voice note |
 
+## Update & Deploy ke VPS
+
+### Cara cepat (1 klik)
+Double-click **`DEPLOY-UPDATE.bat`** di folder project:
+1. Push perubahan ke GitHub
+2. SSH ke VPS → `git pull` → restart game
+
+### Manual di VPS
+```bash
+cd /var/www/stickman-fpp-online
+git pull origin main
+npm install
+pm2 restart stickman
+```
+
+### Auto-deploy (opsional)
+GitHub Actions: tambah Secrets di repo → Settings → Secrets:
+- `VPS_HOST` = `157.10.161.95`
+- `VPS_USER` = `root`
+- `VPS_SSH_KEY` = isi private key (`id_ed25519`)
+
+Setiap `git push` ke `main` → VPS update otomatis.
+
 ## Teknologi
 
 - Node.js + Express + Socket.io
