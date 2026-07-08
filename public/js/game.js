@@ -35,7 +35,7 @@
   let socket = null;
   let myId = null;
   let myNickname = 'Player';
-  let roomData = { width: 28, depth: 28, height: 3.4 };
+  let roomData = { width: 150, depth: 150, height: 4.5 };
   let partitions = [];
   const PLAYER_RADIUS = 0.35;
 
@@ -749,34 +749,28 @@
   function initThree() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0xc9ba82);
-    scene.fog = new THREE.Fog(0xc9ba82, 22, 48);
+    scene.fog = new THREE.Fog(0xc9ba82, 35, 95);
 
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 180);
     camera.rotation.order = 'YXZ';
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.enabled = false;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.05;
     document.body.appendChild(renderer.domElement);
 
-    const ambient = new THREE.AmbientLight(0xfff0c8, 0.72);
+    const ambient = new THREE.AmbientLight(0xfff0c8, 0.82);
     scene.add(ambient);
 
-    const mainLight = new THREE.DirectionalLight(0xfff4cc, 0.35);
-    mainLight.position.set(0, 8, 0);
-    mainLight.castShadow = true;
-    mainLight.shadow.mapSize.set(1024, 1024);
-    mainLight.shadow.camera.near = 0.5;
-    mainLight.shadow.camera.far = 30;
-    mainLight.shadow.camera.left = -22;
-    mainLight.shadow.camera.right = 22;
-    mainLight.shadow.camera.top = 22;
-    mainLight.shadow.camera.bottom = -22;
+    const mainLight = new THREE.DirectionalLight(0xfff4cc, 0.28);
+    mainLight.position.set(0, 12, 0);
     scene.add(mainLight);
+
+    const hemi = new THREE.HemisphereLight(0xfff4cc, 0x9a8650, 0.35);
+    scene.add(hemi);
 
     window.addEventListener('resize', onResize);
   }
@@ -821,7 +815,7 @@
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(10, 10);
+    tex.repeat.set(38, 38);
     return tex;
   }
 
@@ -844,7 +838,7 @@
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(4, 2);
+    tex.repeat.set(18, 9);
     return tex;
   }
 
@@ -867,7 +861,7 @@
     const tex = new THREE.CanvasTexture(canvas);
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
-    tex.repeat.set(8, 8);
+    tex.repeat.set(38, 38);
     return tex;
   }
 
@@ -893,92 +887,85 @@
     };
   }
 
-  function createFluorescentLight(x, z, h) {
+  function createFluorescentLight(x, z, h, withBulbLight) {
     const group = new THREE.Group();
     const housingMat = new THREE.MeshStandardMaterial({ color: 0x9a9a8a, metalness: 0.35, roughness: 0.55 });
     const bulbMat = new THREE.MeshStandardMaterial({
       color: 0xffffe8,
       emissive: 0xfff6b8,
-      emissiveIntensity: 1.1,
+      emissiveIntensity: 0.95,
       roughness: 0.25
     });
 
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.12, 0.55), housingMat);
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.1, 0.5), housingMat);
     group.add(housing);
 
-    const bulb = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.04, 0.42), bulbMat);
-    bulb.position.y = -0.06;
+    const bulb = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.035, 0.38), bulbMat);
+    bulb.position.y = -0.05;
     group.add(bulb);
 
     group.position.set(x, h - 0.08, z);
     roomGroup.add(group);
 
-    const light = new THREE.PointLight(0xfff2b8, 0.55, 14, 1.6);
-    light.position.set(x, h - 0.2, z);
-    light.castShadow = false;
-    roomGroup.add(light);
+    if (withBulbLight) {
+      const light = new THREE.PointLight(0xfff2b8, 0.42, 22, 1.5);
+      light.position.set(x, h - 0.18, z);
+      roomGroup.add(light);
+    }
   }
 
   function addFluorescentGrid(w, d, h) {
-    const spacing = 7;
-    const hw = w / 2 - 2;
-    const hd = d / 2 - 2;
+    const spacing = 15;
+    const hw = w / 2 - 3;
+    const hd = d / 2 - 3;
+    let idx = 0;
     for (let x = -hw; x <= hw; x += spacing) {
       for (let z = -hd; z <= hd; z += spacing) {
-        createFluorescentLight(x, z, h);
+        createFluorescentLight(x, z, h, idx % 2 === 0);
+        idx++;
       }
     }
   }
 
-  function addCeilingGridLines(w, d, h) {
-    const gridMat = new THREE.MeshStandardMaterial({ color: 0x8a8470, roughness: 0.8 });
-    const hw = w / 2;
-    const hd = d / 2;
-    const spacing = 3.5;
-    const beamH = 0.06;
-
-    for (let x = -hw; x <= hw; x += spacing) {
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(0.08, beamH, d), gridMat);
-      beam.position.set(x, h - beamH / 2, 0);
-      roomGroup.add(beam);
-    }
-    for (let z = -hd; z <= hd; z += spacing) {
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(w, beamH, 0.08), gridMat);
-      beam.position.set(0, h - beamH / 2, z);
-      roomGroup.add(beam);
-    }
-  }
-
   function addPartitionWalls(h, mats) {
-    partitions.forEach((part) => {
-      const wall = new THREE.Mesh(
-        new THREE.BoxGeometry(part.w, h, part.d),
-        mats.wallpaper
-      );
-      wall.position.set(part.x, h / 2, part.z);
-      wall.castShadow = true;
-      wall.receiveShadow = true;
-      roomGroup.add(wall);
+    if (!partitions.length) return;
+
+    const dummy = new THREE.Object3D();
+    const baseGeo = new THREE.BoxGeometry(1, h, 1);
+    const mesh = new THREE.InstancedMesh(baseGeo, mats.wallpaper, partitions.length);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+    partitions.forEach((part, i) => {
+      dummy.position.set(part.x, h / 2, part.z);
+      dummy.scale.set(part.w, 1, part.d);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
     });
+    mesh.instanceMatrix.needsUpdate = true;
+    roomGroup.add(mesh);
   }
 
-  function addCarpetStains() {
+  function addCarpetStains(w, d) {
     const stainMat = new THREE.MeshStandardMaterial({
       color: 0x5a4a28,
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.25,
       roughness: 1
     });
-    const spots = [
-      [3, -4, 1.8, 1.4], [-6, 2, 2.2, 1.6], [9, -7, 1.5, 1.2],
-      [-10, -5, 2, 1.8], [5, 9, 1.6, 1.3], [-2, -9, 2.4, 1.5]
-    ];
-    spots.forEach(([x, z, sw, sh]) => {
+    const hw = w / 2 - 5;
+    const hd = d / 2 - 5;
+    for (let i = 0; i < 48; i++) {
+      const sw = 1.2 + Math.random() * 2.2;
+      const sh = 1.0 + Math.random() * 2.0;
       const stain = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), stainMat);
       stain.rotation.x = -Math.PI / 2;
-      stain.position.set(x, 0.01, z);
+      stain.position.set(
+        (Math.random() * 2 - 1) * hw,
+        0.01,
+        (Math.random() * 2 - 1) * hd
+      );
       roomGroup.add(stain);
-    });
+    }
   }
 
   function createRoom(w, d, h) {
@@ -992,17 +979,14 @@
 
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mats.carpet);
     floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
     roomGroup.add(floor);
 
-    addCarpetStains();
+    addCarpetStains(w, d);
 
     const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mats.ceiling);
     ceiling.rotation.x = Math.PI / 2;
     ceiling.position.y = h;
     roomGroup.add(ceiling);
-
-    addCeilingGridLines(w, d, h);
 
     const walls = [
       { size: [w, h], pos: [0, h / 2, -hd], rotY: 0 },
@@ -1696,8 +1680,8 @@
 
     isPlaying = true;
     isPaused = false;
-    position.x = (Math.random() - 0.5) * 4;
-    position.z = (Math.random() - 0.5) * 4;
+    position.x = (Math.random() - 0.5) * 12;
+    position.z = (Math.random() - 0.5) * 12;
     position.y = 0;
 
     createLocalPlayer();

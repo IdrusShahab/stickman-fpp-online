@@ -3,6 +3,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const { registerUser, loginUser, verifyToken } = require('./auth-service');
+const { ROOM, PARTITIONS, resolvePartitions } = require('./room-layout');
 
 const app = express();
 const server = http.createServer(app);
@@ -50,54 +51,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const players = new Map();
 
-const ROOM = {
-  width: 28,
-  depth: 28,
-  height: 3.4
-};
-
-const PARTITIONS = [
-  { x: -8.5, z: -5, w: 11, d: 0.2 },
-  { x: 8.5, z: -5, w: 11, d: 0.2 },
-  { x: -8.5, z: 5, w: 11, d: 0.2 },
-  { x: 8.5, z: 5, w: 11, d: 0.2 },
-  { x: -5, z: -10, w: 0.2, d: 8 },
-  { x: 5, z: -10, w: 0.2, d: 8 },
-  { x: -5, z: 10, w: 0.2, d: 8 },
-  { x: 5, z: 10, w: 0.2, d: 8 },
-  { x: 0, z: -8, w: 6, d: 0.2 },
-  { x: 0, z: 8, w: 6, d: 0.2 },
-  { x: -8, z: 0, w: 0.2, d: 6 },
-  { x: 8, z: 0, w: 0.2, d: 6 },
-  { x: -11, z: -11, w: 6, d: 0.2 },
-  { x: 11, z: 11, w: 6, d: 0.2 },
-  { x: -11, z: 8, w: 0.2, d: 5 },
-  { x: 11, z: -8, w: 0.2, d: 5 }
-];
-
-const PLAYER_RADIUS = 0.35;
-
-function resolvePartitions(x, z) {
-  for (const wall of PARTITIONS) {
-    const halfW = wall.w / 2;
-    const halfD = wall.d / 2;
-    const dx = x - wall.x;
-    const dz = z - wall.z;
-    const closestX = Math.max(-halfW, Math.min(halfW, dx));
-    const closestZ = Math.max(-halfD, Math.min(halfD, dz));
-    const distX = dx - closestX;
-    const distZ = dz - closestZ;
-    const distSq = distX * distX + distZ * distZ;
-    if (distSq < PLAYER_RADIUS * PLAYER_RADIUS && distSq > 0.000001) {
-      const dist = Math.sqrt(distSq);
-      const push = PLAYER_RADIUS - dist;
-      x += (distX / dist) * push;
-      z += (distZ / dist) * push;
-    }
-  }
-  return { x, z };
-}
-
 function clampPosition(pos) {
   const margin = 0.5;
   const halfW = ROOM.width / 2 - margin;
@@ -105,7 +58,7 @@ function clampPosition(pos) {
 
   let x = Math.max(-halfW, Math.min(halfW, pos.x));
   let z = Math.max(-halfD, Math.min(halfD, pos.z));
-  const resolved = resolvePartitions(x, z);
+  const resolved = resolvePartitions(x, z, PARTITIONS);
   x = resolved.x;
   z = resolved.z;
 
