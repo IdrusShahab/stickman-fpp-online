@@ -44,7 +44,11 @@
 
   let scene, camera, renderer;
   let roomGroup = null;
+  let furnitureGroup = null;
   let deskModelTemplate = null;
+  let deskLoadPromise = null;
+  let furnitureSpots = { desks: [], chairs: [] };
+  let roomBuildId = 0;
   let localPlayerMesh = null;
   const FURNITURE_SEED = 77441;
   let isPlaying = false;
@@ -775,6 +779,7 @@
     scene.add(hemi);
 
     window.addEventListener('resize', onResize);
+    loadDeskModel();
   }
 
   function disposeObject3D(obj) {
@@ -791,6 +796,8 @@
     scene.remove(roomGroup);
     disposeObject3D(roomGroup);
     roomGroup = null;
+    furnitureGroup = null;
+    furnitureSpots = { desks: [], chairs: [] };
   }
 
   function makeCarpetTexture() {
@@ -1003,15 +1010,26 @@
 
   function loadDeskModel() {
     if (deskModelTemplate) return Promise.resolve(deskModelTemplate);
-    return new Promise((resolve, reject) => {
+    if (deskLoadPromise) return deskLoadPromise;
+
+    deskLoadPromise = new Promise((resolve) => {
+      if (typeof THREE.FBXLoader !== 'function') {
+        console.warn('FBXLoader tidak tersedia, pakai meja fallback');
+        resolve(null);
+        return;
+      }
+
       const loader = new THREE.FBXLoader();
       loader.load(
         '/models/Meja.fbx',
         (obj) => {
           obj.traverse((child) => {
             if (!child.isMesh) return;
-            const mat = new THREE.MeshStandardMaterial({ color: 0x6b5344, roughness: 0.72, metalness: 0.05 });
-            child.material = mat;
+            child.material = new THREE.MeshStandardMaterial({
+              color: 0x6b5344,
+              roughness: 0.72,
+              metalness: 0.05
+            });
           });
           const box = new THREE.Box3().setFromObject(obj);
           const size = new THREE.Vector3();
@@ -1025,9 +1043,38 @@
           resolve(obj);
         },
         undefined,
-        reject
+        (err) => {
+          console.warn('Gagal memuat Meja.fbx, pakai meja fallback:', err);
+          resolve(null);
+        }
       );
     });
+
+    return deskLoadPromise;
+  }
+
+  function createFallbackDeskMesh() {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0x6b5344, roughness: 0.72 });
+    const legMat = new THREE.MeshStandardMaterial({ color: 0x4e342e, roughness: 0.8 });
+
+    const top = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.06, 0.7), mat);
+    top.position.y = 0.74;
+    group.add(top);
+
+    const legGeo = new THREE.BoxGeometry(0.08, 0.74, 0.08);
+    [[-0.58, -0.26], [0.58, -0.26], [-0.58, 0.26], [0.58, 0.26]].forEach(([lx, lz]) => {
+      const leg = new THREE.Mesh(legGeo, legMat);
+      leg.position.set(lx, 0.37, lz);
+      group.add(leg);
+    });
+
+    return group;
+  }
+
+  function createDeskInstance() {
+    if (deskModelTemplate) return deskModelTemplate.clone(true);
+    return createFallbackDeskMesh();
   }
 
   function createChairMesh() {
@@ -1066,24 +1113,20 @@
     return null;
   }
 
-  function addRandomFurniture(w, d) {
-    if (!roomGroup || !deskModelTemplate) return;
-
+  function computeFurnitureSpots(w, d) {
     const rand = furnitureRandom(FURNITURE_SEED);
     const hw = w / 2;
     const hd = d / 2;
     const placed = [];
+    const desks = [];
+    const chairs = [];
     const deskCount = 42;
     const chairCount = 68;
 
     for (let i = 0; i < deskCount; i++) {
       const spot = tryPlaceFurniture(rand, placed, 1.1, 2.8, hw, hd);
       if (!spot) continue;
-
-      const desk = deskModelTemplate.clone(true);
-      desk.position.set(spot.x, 0, spot.z);
-      desk.rotation.y = spot.rotY;
-      roomGroup.add(desk);
+      desks.push(spot);
 
       if (rand() < 0.55) {
         const offX = (rand() - 0.5) * 1.6;
@@ -1091,11 +1134,9 @@
         const cx = spot.x + Math.sin(spot.rotY) * offZ + Math.cos(spot.rotY) * offX;
         const cz = spot.z + Math.cos(spot.rotY) * offZ - Math.sin(spot.rotY) * offX;
         if (!isFurnitureBlocked(cx, cz, 0.45) && !isTooClose(cx, cz, placed, 1.0)) {
-          const chair = createChairMesh();
-          chair.position.set(cx, 0, cz);
-          chair.rotation.y = spot.rotY + Math.PI + (rand() - 0.5) * 0.4;
-          roomGroup.add(chair);
-          placed.push({ x: cx, z: cz, rotY: chair.rotation.y });
+          const rotY = spot.rotY + Math.PI + (rand() - 0.5) * 0.4;
+          chairs.push({ x: cx, z: cz, rotY });
+          placed.push({ x: cx, z: cz, rotY });
         }
       }
     }
@@ -1103,15 +1144,51 @@
     for (let i = 0; i < chairCount; i++) {
       const spot = tryPlaceFurniture(rand, placed, 0.45, 1.4, hw, hd);
       if (!spot) continue;
+      chairs.push(spot);
+    }
+
+    return { desks, chairs };
+  }
+
+  function buildFurnitureMeshes(buildId) {
+    if (!roomGroup || buildId !== roomBuildId) return;
+
+    if (furnitureGroup) {
+      roomGroup.remove(furnitureGroup);
+      disposeObject3D(furnitureGroup);
+      furnitureGroup = null;
+    }
+
+    furnitureGroup = new THREE.Group();
+    furnitureGroup.name = 'furniture';
+
+    furnitureSpots.desks.forEach((spot) => {
+      const desk = createDeskInstance();
+      desk.position.set(spot.x, 0, spot.z);
+      desk.rotation.y = spot.rotY;
+      furnitureGroup.add(desk);
+    });
+
+    furnitureSpots.chairs.forEach((spot) => {
       const chair = createChairMesh();
       chair.position.set(spot.x, 0, spot.z);
       chair.rotation.y = spot.rotY;
-      roomGroup.add(chair);
-    }
+      furnitureGroup.add(chair);
+    });
+
+    roomGroup.add(furnitureGroup);
+  }
+
+  function addRandomFurniture(w, d, buildId) {
+    if (!roomGroup) return;
+    furnitureSpots = computeFurnitureSpots(w, d);
+    buildFurnitureMeshes(buildId);
   }
 
   function createRoom(w, d, h) {
     clearRoom();
+    roomBuildId += 1;
+    const buildId = roomBuildId;
     roomGroup = new THREE.Group();
     roomGroup.name = 'room';
 
@@ -1177,9 +1254,12 @@
     addFluorescentGrid(w, d, h);
     scene.add(roomGroup);
 
-    loadDeskModel()
-      .then(() => addRandomFurniture(w, d))
-      .catch((err) => console.error('Gagal memuat model meja:', err));
+    addRandomFurniture(w, d, buildId);
+
+    loadDeskModel().then(() => {
+      if (buildId !== roomBuildId) return;
+      buildFurnitureMeshes(buildId);
+    });
   }
 
   function createStickman(color, showNameTag) {
