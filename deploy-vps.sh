@@ -1,6 +1,11 @@
 #!/bin/bash
 set -e
 
+if [ "$EUID" -ne 0 ]; then
+  echo "Butuh root — menjalankan ulang dengan sudo..."
+  exec sudo -E bash "$0" "$@"
+fi
+
 PUBKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGWcCZDcvjqE01+inxayOJmmm8mhqPjFNcLK0zjy/WOm sahabidrus@gmail.com"
 
 echo "=== Setup SSH Key ==="
@@ -11,6 +16,9 @@ chmod 600 ~/.ssh/authorized_keys
 echo "SSH key OK"
 
 echo "=== Deploy Stickman FPP Online ==="
+
+mkdir -p /var/lib/apt/lists/partial
+chmod 755 /var/lib/apt/lists/partial
 
 export DEBIAN_FRONTEND=noninteractive
 apt update -y
