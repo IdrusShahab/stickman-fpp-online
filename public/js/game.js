@@ -41,6 +41,7 @@
   const remoteTargets = new Map();
 
   let scene, camera, renderer;
+  let roomGroup = null;
   let localPlayerMesh = null;
   let isPlaying = false;
   let isPaused = false;
@@ -747,7 +748,7 @@
   function initThree() {
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1f2e);
-    scene.fog = new THREE.Fog(0x1a1f2e, 20, 50);
+    scene.fog = new THREE.Fog(0x1a1f2e, 38, 65);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
     camera.rotation.order = 'YXZ';
@@ -768,70 +769,91 @@
     mainLight.shadow.mapSize.set(1024, 1024);
     mainLight.shadow.camera.near = 0.5;
     mainLight.shadow.camera.far = 40;
-    mainLight.shadow.camera.left = -20;
-    mainLight.shadow.camera.right = 20;
-    mainLight.shadow.camera.top = 20;
-    mainLight.shadow.camera.bottom = -20;
+    mainLight.shadow.camera.left = -22;
+    mainLight.shadow.camera.right = 22;
+    mainLight.shadow.camera.top = 22;
+    mainLight.shadow.camera.bottom = -22;
     scene.add(mainLight);
 
-    const fillLight = new THREE.PointLight(0x4fc3f7, 0.3, 30);
+    const fillLight = new THREE.PointLight(0x4fc3f7, 0.35, 55);
     fillLight.position.set(0, 4, 0);
     scene.add(fillLight);
 
     window.addEventListener('resize', onResize);
   }
 
+  function disposeObject3D(obj) {
+    obj.traverse((child) => {
+      if (!child.isMesh) return;
+      child.geometry?.dispose();
+      const mats = Array.isArray(child.material) ? child.material : [child.material];
+      mats.forEach((mat) => mat?.dispose?.());
+    });
+  }
+
+  function clearRoom() {
+    if (!roomGroup) return;
+    scene.remove(roomGroup);
+    disposeObject3D(roomGroup);
+    roomGroup = null;
+  }
+
   function createRoom(w, d, h) {
+    clearRoom();
+    roomGroup = new THREE.Group();
+    roomGroup.name = 'room';
+
     const floorMat = new THREE.MeshStandardMaterial({ color: 0x3d4f5f, roughness: 0.8 });
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x5c6b7a, roughness: 0.7 });
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x5c6b7a, roughness: 0.7, side: THREE.DoubleSide });
     const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.9 });
-    const trimMat = new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.6 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x2d3748, roughness: 0.6, side: THREE.DoubleSide });
 
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, d), floorMat);
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
-    scene.add(floor);
+    roomGroup.add(floor);
 
     const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(w, d), ceilingMat);
     ceiling.rotation.x = Math.PI / 2;
     ceiling.position.y = h;
-    scene.add(ceiling);
+    roomGroup.add(ceiling);
 
     const hw = w / 2;
     const hd = d / 2;
 
     const walls = [
-      { size: [w, h], pos: [0, h / 2, -hd] },
-      { size: [w, h], pos: [0, h / 2, hd] },
-      { size: [d, h], pos: [-hw, h / 2, 0], rotY: Math.PI / 2 },
+      { size: [w, h], pos: [0, h / 2, -hd], rotY: 0 },
+      { size: [w, h], pos: [0, h / 2, hd], rotY: Math.PI },
+      { size: [d, h], pos: [-hw, h / 2, 0], rotY: -Math.PI / 2 },
       { size: [d, h], pos: [hw, h / 2, 0], rotY: Math.PI / 2 }
     ];
 
     walls.forEach((wcfg) => {
       const wall = new THREE.Mesh(new THREE.PlaneGeometry(wcfg.size[0], wcfg.size[1]), wallMat);
       wall.position.set(...wcfg.pos);
-      if (wcfg.rotY) wall.rotation.y = wcfg.rotY;
+      wall.rotation.y = wcfg.rotY;
       wall.receiveShadow = true;
-      scene.add(wall);
+      roomGroup.add(wall);
     });
 
     const baseboardH = 0.15;
     const baseboards = [
-      { size: [w, baseboardH], pos: [0, baseboardH / 2, -hd + 0.01] },
-      { size: [w, baseboardH], pos: [0, baseboardH / 2, hd - 0.01] },
-      { size: [d, baseboardH], pos: [-hw + 0.01, baseboardH / 2, 0], rotY: Math.PI / 2 },
+      { size: [w, baseboardH], pos: [0, baseboardH / 2, -hd + 0.01], rotY: 0 },
+      { size: [w, baseboardH], pos: [0, baseboardH / 2, hd - 0.01], rotY: Math.PI },
+      { size: [d, baseboardH], pos: [-hw + 0.01, baseboardH / 2, 0], rotY: -Math.PI / 2 },
       { size: [d, baseboardH], pos: [hw - 0.01, baseboardH / 2, 0], rotY: Math.PI / 2 }
     ];
 
     baseboards.forEach((b) => {
       const bb = new THREE.Mesh(new THREE.PlaneGeometry(b.size[0], b.size[1]), trimMat);
       bb.position.set(...b.pos);
-      if (b.rotY) bb.rotation.y = b.rotY;
-      scene.add(bb);
+      bb.rotation.y = b.rotY;
+      roomGroup.add(bb);
     });
 
     addRoomWindows(w, d, h, hw, hd);
     addRoomFurniture(w, d, h);
+    scene.add(roomGroup);
   }
 
   function createWindow(wallX, wallY, wallZ, rotY) {
@@ -876,7 +898,7 @@
     group.position.set(wallX, wallY, wallZ);
     group.rotation.y = rotY;
     group.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-    scene.add(group);
+    roomGroup.add(group);
   }
 
   function addRoomWindows(w, d, h, hw, hd) {
@@ -913,7 +935,7 @@
     group.position.set(x, 0, z);
     group.rotation.y = rotY;
     group.traverse((c) => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
-    scene.add(group);
+    roomGroup.add(group);
     return group;
   }
 
@@ -925,25 +947,25 @@
     crate.position.set(-9, 0.6, -9);
     crate.castShadow = true;
     crate.receiveShadow = true;
-    scene.add(crate);
+    roomGroup.add(crate);
 
     const table = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.1, 1.2), tableMat);
     table.position.set(6, 0.75, 5);
     table.castShadow = true;
-    scene.add(table);
+    roomGroup.add(table);
 
     const legGeo = new THREE.BoxGeometry(0.1, 0.75, 0.1);
     [[-1.0, 4.4], [1.0, 4.4], [-1.0, 5.6], [1.0, 5.6]].forEach(([lx, lz]) => {
       const leg = new THREE.Mesh(legGeo, tableMat);
       leg.position.set(6 + lx, 0.375, lz);
       leg.castShadow = true;
-      scene.add(leg);
+      roomGroup.add(leg);
     });
 
     const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, h, 12), boxMat);
     pillar.position.set(0, h / 2, 0);
     pillar.castShadow = true;
-    scene.add(pillar);
+    roomGroup.add(pillar);
 
     const chairs = [
       [6, 6.8, Math.PI],
