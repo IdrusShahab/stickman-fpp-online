@@ -25,6 +25,15 @@ Game Stickman FPP: https://${DOMAIN}${BASE_PATH}/
 EOF
 fi
 
+mkdir -p "${WWW_ROOT}${BASE_PATH}"
+cat > "${WWW_ROOT}${BASE_PATH}/README.txt" <<EOF
+Game Stickman FPP Online (Backrooms Level 0)
+
+Buka game: https://${DOMAIN}${BASE_PATH}/
+
+Klik folder ini di halaman utama, atau buka link di atas.
+EOF
+
 echo "==> Update Nginx untuk ${DOMAIN} (root + ${BASE_PATH})"
 
 cp "${PROJECT_DIR}/nginx-idrusrandom.web.id.conf" "/etc/nginx/sites-available/${DOMAIN}"
