@@ -5,13 +5,27 @@ DOMAIN="idrusrandom.web.id"
 APP_PORT=3000
 BASE_PATH="/fppstickman"
 PROJECT_DIR="/var/www/stickman-fpp-online"
+WWW_ROOT="/var/www/html"
 
 if [ "$(id -u)" -ne 0 ]; then
   echo "Jalankan dengan sudo: sudo bash setup-subpath.sh"
   exit 1
 fi
 
-echo "==> Update Nginx untuk ${DOMAIN}${BASE_PATH}"
+echo "==> Siapkan folder file publik: ${WWW_ROOT}"
+mkdir -p "${WWW_ROOT}"
+if [ ! -f "${WWW_ROOT}/README.txt" ]; then
+  cat > "${WWW_ROOT}/README.txt" <<EOF
+Selamat datang di idrusrandom.web.id
+
+Folder ini bisa diakses lewat browser di https://${DOMAIN}/
+Upload file ke folder ini via SFTP/SSH: ${WWW_ROOT}
+
+Game Stickman FPP: https://${DOMAIN}${BASE_PATH}/
+EOF
+fi
+
+echo "==> Update Nginx untuk ${DOMAIN} (root + ${BASE_PATH})"
 
 cp "${PROJECT_DIR}/nginx-idrusrandom.web.id.conf" "/etc/nginx/sites-available/${DOMAIN}"
 
@@ -35,6 +49,7 @@ server {
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     client_max_body_size 10m;
+    root ${WWW_ROOT};
 
     location = ${BASE_PATH} {
         return 301 ${BASE_PATH}/;
@@ -51,6 +66,13 @@ server {
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 86400;
     }
+
+    location / {
+        autoindex on;
+        autoindex_exact_size off;
+        autoindex_localtime on;
+        try_files \$uri \$uri/ =404;
+    }
 }
 EOF
 fi
@@ -66,5 +88,7 @@ pm2 start ecosystem.config.js
 pm2 save
 
 echo ""
-echo "Game: https://${DOMAIN}${BASE_PATH}/"
+echo "Root files: https://${DOMAIN}/"
+echo "Game:       https://${DOMAIN}${BASE_PATH}/"
+echo "Upload ke:  ${WWW_ROOT}"
 echo "Selesai."
