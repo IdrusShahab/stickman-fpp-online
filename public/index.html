@@ -122,11 +122,12 @@
     </div>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="js/app-base.js"></script>
+  <script>document.write('<script src="' + (window.APP_BASE || '') + '/socket.io/socket.io.js"><\/script>');</script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="js/vendor/fflate.min.js"></script>
   <script src="js/vendor/FBXLoader.js"></script>
-  <script src="js/auth.js?v=1"></script>
-  <script src="js/game.js?v=14"></script>
+  <script src="js/auth.js?v=2"></script>
+  <script src="js/game.js?v=15"></script>
 </body>
 </html>

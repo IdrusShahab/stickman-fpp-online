@@ -6,18 +6,24 @@ const { registerUser, loginUser, verifyToken } = require('./auth-service');
 const { getUserSettings, saveUserSettings } = require('./settings-service');
 const { ROOM, PARTITIONS, resolvePartitions } = require('./room-layout');
 
+const BASE_PATH = (process.env.BASE_PATH ?? '/fppstickman').replace(/\/$/, '');
+const mountPath = (route) => `${BASE_PATH}${route}`;
+
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
+  path: mountPath('/socket.io/'),
   transports: ['websocket', 'polling'],
   maxHttpBufferSize: 5e6
 });
 
 const PORT = process.env.PORT || 3000;
+const publicDir = path.join(__dirname, 'public');
 
-app.use(express.json({ limit: '1mb' }));
+const appRouter = express.Router();
+appRouter.use(express.json({ limit: '1mb' }));
 
-app.post('/api/auth/register', (req, res) => {
+appRouter.post('/api/auth/register', (req, res) => {
   const result = registerUser(req.body || {});
   if (result.error) {
     return res.status(400).json({ error: result.error });
@@ -25,7 +31,7 @@ app.post('/api/auth/register', (req, res) => {
   res.json(result);
 });
 
-app.post('/api/auth/login', (req, res) => {
+appRouter.post('/api/auth/login', (req, res) => {
   const { username, password } = req.body || {};
   const result = loginUser(username, password);
   if (result.error) {
@@ -45,7 +51,7 @@ function getAuthUser(req) {
   }
 }
 
-app.get('/api/auth/me', (req, res) => {
+appRouter.get('/api/auth/me', (req, res) => {
   const user = getAuthUser(req);
   if (!user) {
     return res.status(401).json({ error: 'Sesi tidak valid' });
@@ -53,7 +59,7 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ user });
 });
 
-app.get('/api/settings', (req, res) => {
+appRouter.get('/api/settings', (req, res) => {
   const user = getAuthUser(req);
   if (!user) {
     return res.status(401).json({ error: 'Sesi tidak valid' });
@@ -62,7 +68,7 @@ app.get('/api/settings', (req, res) => {
   res.json({ settings });
 });
 
-app.put('/api/settings', (req, res) => {
+appRouter.put('/api/settings', (req, res) => {
   const user = getAuthUser(req);
   if (!user) {
     return res.status(401).json({ error: 'Sesi tidak valid' });
@@ -71,7 +77,17 @@ app.put('/api/settings', (req, res) => {
   res.json({ settings: saved });
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+appRouter.use(express.static(publicDir));
+appRouter.get('/', (req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+
+if (BASE_PATH) {
+  app.use(BASE_PATH, appRouter);
+  app.get(BASE_PATH, (req, res) => res.redirect(301, `${BASE_PATH}/`));
+} else {
+  app.use(appRouter);
+}
 
 const players = new Map();
 
@@ -238,8 +254,9 @@ setInterval(() => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Stickman FPP server running on port ${PORT}`);
-  console.log(`Local:   http://localhost:${PORT}`);
-  console.log(`Network: http://<IP-PC-KAMU>:${PORT}`);
+  console.log(`Base path: ${BASE_PATH || '/'}`);
+  console.log(`Local:   http://localhost:${PORT}${BASE_PATH}/`);
+  console.log(`Network: http://<IP-PC-KAMU>:${PORT}${BASE_PATH}/`);
   if (!process.env.JWT_SECRET) {
     console.warn('WARNING: JWT_SECRET tidak diset. Gunakan env JWT_SECRET di production.');
   }

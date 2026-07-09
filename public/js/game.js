@@ -543,7 +543,7 @@
     };
     if (body) opts.body = JSON.stringify(body);
 
-    const res = await fetch('/api/settings', opts);
+    const res = await fetch(`${window.APP_BASE || ''}/api/settings`, opts);
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'Gagal menyimpan pengaturan');
@@ -1141,7 +1141,7 @@
 
       const loader = new THREE.FBXLoader();
       loader.load(
-        '/models/Meja.fbx',
+        `${window.APP_BASE || ''}/models/Meja.fbx`,
         (obj) => {
           deskModelTemplate = prepareDeskTemplate(obj);
           resolve(deskModelTemplate);
@@ -2110,7 +2110,7 @@
     if (socket?.connected) return;
 
     const token = window.GameAuth.getToken();
-    socket = io({ auth: { token } });
+    socket = io({ path: `${window.APP_BASE || ''}/socket.io/`, auth: { token } });
     bindSocketEvents(socket);
     socket.on('connect', startPingInterval);
     if (socket.connected) startPingInterval();

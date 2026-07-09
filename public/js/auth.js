@@ -61,6 +61,10 @@
     document.dispatchEvent(new CustomEvent('auth:logout'));
   }
 
+  function apiUrl(path) {
+    return `${window.APP_BASE || ''}${path}`;
+  }
+
   async function api(path, options = {}) {
     const headers = {
       'Content-Type': 'application/json',
@@ -69,7 +73,7 @@
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
 
-    const res = await fetch(path, { ...options, headers });
+    const res = await fetch(apiUrl(path), { ...options, headers });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       throw new Error(data.error || 'Terjadi kesalahan');
