@@ -133,7 +133,6 @@
     e.preventDefault();
     clearError();
     const username = document.getElementById('reg-username').value;
-    const email = document.getElementById('reg-email').value;
     const displayName = document.getElementById('reg-displayname').value;
     const password = document.getElementById('reg-password').value;
     const passwordConfirm = document.getElementById('reg-password-confirm').value;
@@ -146,7 +145,7 @@
     try {
       const data = await api('/api/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ username, email, displayName, password })
+        body: JSON.stringify({ username, displayName, password })
       });
       saveSession(data.token, data.user);
       showMenuScreen();

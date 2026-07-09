@@ -7,23 +7,18 @@ const JWT_EXPIRES = '7d';
 const BCRYPT_ROUNDS = 10;
 
 const usernameRe = /^[a-zA-Z0-9_]{3,20}$/;
-const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function sanitizeDisplayName(name) {
   return String(name || '').trim().slice(0, 16);
 }
 
-function validateRegister({ username, email, password, displayName }) {
+function validateRegister({ username, password, displayName }) {
   const u = String(username || '').trim();
-  const e = String(email || '').trim().toLowerCase();
   const p = String(password || '');
   const d = sanitizeDisplayName(displayName);
 
   if (!usernameRe.test(u)) {
     return { error: 'Username 3-20 karakter, huruf/angka/underscore saja' };
-  }
-  if (!emailRe.test(e)) {
-    return { error: 'Format email tidak valid' };
   }
   if (p.length < 6) {
     return { error: 'Password minimal 6 karakter' };
@@ -31,14 +26,17 @@ function validateRegister({ username, email, password, displayName }) {
   if (d.length < 2) {
     return { error: 'Nama tampilan minimal 2 karakter' };
   }
-  return { username: u, email: e, password: p, displayName: d };
+  return { username: u, password: p, displayName: d };
+}
+
+function placeholderEmail(username) {
+  return `${String(username).toLowerCase()}@local.stickman`;
 }
 
 function publicUser(row) {
   return {
     id: row.id,
     username: row.username,
-    email: row.email,
     displayName: row.display_name,
     createdAt: row.created_at
   };
@@ -48,13 +46,11 @@ function registerUser(payload) {
   const valid = validateRegister(payload);
   if (valid.error) return { error: valid.error };
 
-  const { username, email, password, displayName } = valid;
+  const { username, password, displayName } = valid;
   const existingUser = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username);
   if (existingUser) return { error: 'Username sudah dipakai' };
 
-  const existingEmail = db.prepare('SELECT id FROM users WHERE email = ? COLLATE NOCASE').get(email);
-  if (existingEmail) return { error: 'Email sudah terdaftar' };
-
+  const email = placeholderEmail(username);
   const passwordHash = bcrypt.hashSync(password, BCRYPT_ROUNDS);
   const createdAt = Date.now();
 
@@ -68,18 +64,17 @@ function registerUser(payload) {
   return { user: publicUser(user), token };
 }
 
-function loginUser(usernameOrEmail, password) {
-  const login = String(usernameOrEmail || '').trim();
+function loginUser(username, password) {
+  const login = String(username || '').trim();
   const pass = String(password || '');
-  if (!login || !pass) return { error: 'Username/email dan password wajib diisi' };
+  if (!login || !pass) return { error: 'Username dan password wajib diisi' };
 
   const user = db.prepare(`
-    SELECT * FROM users
-    WHERE username = ? COLLATE NOCASE OR email = ? COLLATE NOCASE
-  `).get(login, login.toLowerCase());
+    SELECT * FROM users WHERE username = ? COLLATE NOCASE
+  `).get(login);
 
   if (!user || !bcrypt.compareSync(pass, user.password_hash)) {
-    return { error: 'Username/email atau password salah' };
+    return { error: 'Username atau password salah' };
   }
 
   const token = signToken(user);
